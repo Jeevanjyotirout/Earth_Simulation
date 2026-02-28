@@ -1,0 +1,1295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Earth System Simulation Engine</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;700;900&family=Exo+2:wght@300;400;600&display=swap" rel="stylesheet">
+
+<style>
+:root {
+  --bg:       #030810;
+  --panel:    #060f1e;
+  --border:   #0d2540;
+  --glow:     #00c8ff;
+  --glow2:    #00ff9d;
+  --warn:     #ff6b35;
+  --danger:   #ff2244;
+  --text:     #c8e0f0;
+  --muted:    #4a6880;
+  --font-mono: 'Share Tech Mono', monospace;
+  --font-hd:   'Orbitron', sans-serif;
+  --font-body: 'Exo 2', sans-serif;
+}
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* ── SCANLINE OVERLAY ─────────────────────────────────── */
+body::before {
+  content: '';
+  position: fixed; inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0,200,255,0.015) 2px,
+    rgba(0,200,255,0.015) 4px
+  );
+  pointer-events: none;
+  z-index: 9999;
+}
+
+/* ── NOISE TEXTURE ─────────────────────────────────────── */
+body::after {
+  content: '';
+  position: fixed; inset: 0;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.03'/%3E%3C/svg%3E");
+  pointer-events: none;
+  z-index: 9998;
+  opacity: 0.4;
+}
+
+/* ── STAR FIELD ─────────────────────────────────────────── */
+#starfield {
+  position: fixed; inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ── HEADER ─────────────────────────────────────────────── */
+header {
+  position: relative;
+  z-index: 10;
+  text-align: center;
+  padding: 60px 20px 40px;
+  border-bottom: 1px solid var(--border);
+}
+
+.header-grid-lines {
+  position: absolute; inset: 0;
+  background-image:
+    linear-gradient(rgba(0,200,255,0.04) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(0,200,255,0.04) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+.badge {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 3px;
+  color: var(--glow);
+  border: 1px solid var(--glow);
+  padding: 4px 14px;
+  margin-bottom: 18px;
+  text-transform: uppercase;
+  animation: pulse-border 3s ease-in-out infinite;
+}
+
+@keyframes pulse-border {
+  0%,100% { box-shadow: 0 0 6px rgba(0,200,255,0.3); }
+  50%      { box-shadow: 0 0 20px rgba(0,200,255,0.7); }
+}
+
+h1 {
+  font-family: var(--font-hd);
+  font-size: clamp(22px, 4vw, 52px);
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: linear-gradient(135deg, #fff 0%, var(--glow) 50%, var(--glow2) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  margin-bottom: 12px;
+}
+
+.subtitle {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--muted);
+  letter-spacing: 1px;
+}
+
+/* ── EARTH CANVAS ───────────────────────────────────────── */
+#earth-wrap {
+  position: relative;
+  z-index: 10;
+  display: flex;
+  justify-content: center;
+  padding: 40px 0 20px;
+}
+
+#earthCanvas {
+  border-radius: 50%;
+  box-shadow: 0 0 60px rgba(0,200,255,0.25), 0 0 120px rgba(0,200,255,0.08);
+}
+
+/* ── MAIN LAYOUT ────────────────────────────────────────── */
+.container {
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 0 24px 80px;
+  position: relative;
+  z-index: 10;
+}
+
+.sim-grid {
+  display: grid;
+  grid-template-columns: 380px 1fr;
+  gap: 24px;
+  margin-top: 32px;
+}
+
+@media (max-width: 900px) {
+  .sim-grid { grid-template-columns: 1fr; }
+}
+
+/* ── PANEL ──────────────────────────────────────────────── */
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.panel-header {
+  background: rgba(0,200,255,0.05);
+  border-bottom: 1px solid var(--border);
+  padding: 10px 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.panel-header .dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--glow);
+  box-shadow: 0 0 8px var(--glow);
+  animation: blink 2s ease-in-out infinite;
+}
+
+@keyframes blink {
+  0%,100% { opacity: 1; }
+  50%      { opacity: 0.3; }
+}
+
+.panel-title {
+  font-family: var(--font-hd);
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: var(--glow);
+  text-transform: uppercase;
+}
+
+.panel-body { padding: 16px; }
+
+/* ── DRIVER CONTROLS ────────────────────────────────────── */
+.driver-section-label {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 3px;
+  color: var(--muted);
+  text-transform: uppercase;
+  margin: 14px 0 10px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.driver-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.driver-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text);
+  margin-bottom: 3px;
+}
+
+.driver-val {
+  font-family: var(--font-hd);
+  font-size: 13px;
+  color: var(--glow);
+  text-align: right;
+  min-width: 34px;
+}
+
+input[type=range] {
+  -webkit-appearance: none;
+  width: 100%;
+  height: 3px;
+  background: var(--border);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+
+input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  background: var(--glow);
+  box-shadow: 0 0 8px var(--glow);
+  cursor: pointer;
+  transition: transform 0.15s;
+}
+
+input[type=range]::-webkit-slider-thumb:hover {
+  transform: scale(1.4);
+}
+
+input[type=range].mitigation::-webkit-slider-thumb {
+  background: var(--glow2);
+  box-shadow: 0 0 8px var(--glow2);
+}
+
+.run-btn {
+  width: 100%;
+  margin-top: 20px;
+  padding: 14px;
+  background: transparent;
+  border: 1px solid var(--glow);
+  color: var(--glow);
+  font-family: var(--font-hd);
+  font-size: 12px;
+  letter-spacing: 3px;
+  text-transform: uppercase;
+  cursor: pointer;
+  border-radius: 3px;
+  transition: all 0.2s;
+  position: relative;
+  overflow: hidden;
+}
+
+.run-btn::before {
+  content: '';
+  position: absolute; inset: 0;
+  background: var(--glow);
+  transform: translateX(-101%);
+  transition: transform 0.3s ease;
+  z-index: 0;
+}
+
+.run-btn:hover::before { transform: translateX(0); }
+.run-btn:hover { color: var(--bg); }
+.run-btn span { position: relative; z-index: 1; }
+
+.scenario-select {
+  width: 100%;
+  margin-top: 12px;
+  padding: 9px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  border-radius: 3px;
+  cursor: pointer;
+  outline: none;
+}
+
+.scenario-select:focus { border-color: var(--glow); }
+
+/* ── OUTPUT PANELS ──────────────────────────────────────── */
+.outputs-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1px;
+  background: var(--border);
+}
+
+@media (max-width: 700px) {
+  .outputs-grid { grid-template-columns: 1fr 1fr; }
+}
+
+.metric-card {
+  background: var(--panel);
+  padding: 16px 14px;
+  position: relative;
+  overflow: hidden;
+  transition: background 0.3s;
+}
+
+.metric-card:hover { background: #0a1525; }
+
+.metric-card::after {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 2px;
+  background: var(--accent-color, var(--glow));
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform 0.5s ease;
+}
+
+.metric-card.updated::after { transform: scaleX(1); }
+
+.metric-icon {
+  font-size: 20px;
+  margin-bottom: 6px;
+  display: block;
+}
+
+.metric-name {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 2px;
+  color: var(--muted);
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+
+.metric-value {
+  font-family: var(--font-hd);
+  font-size: clamp(18px, 2.5vw, 26px);
+  font-weight: 700;
+  color: #fff;
+  transition: all 0.4s;
+}
+
+.metric-unit {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+/* ── BAR CHARTS ─────────────────────────────────────────── */
+.chart-panel { margin-top: 24px; }
+
+.chart-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.chart-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text);
+  width: 140px;
+  flex-shrink: 0;
+  text-align: right;
+}
+
+.chart-track {
+  flex: 1;
+  height: 8px;
+  background: var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+  position: relative;
+}
+
+.chart-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.8s cubic-bezier(.4,0,.2,1);
+  position: relative;
+}
+
+.chart-fill::after {
+  content: '';
+  position: absolute;
+  top: 0; right: 0; bottom: 0;
+  width: 4px;
+  background: rgba(255,255,255,0.5);
+  border-radius: 2px;
+  animation: shimmer 2s ease-in-out infinite;
+}
+
+@keyframes shimmer {
+  0%,100% { opacity: 0; }
+  50%      { opacity: 1; }
+}
+
+.chart-num {
+  font-family: var(--font-hd);
+  font-size: 11px;
+  width: 50px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
+/* ── CIRCULATION DIAGRAM ────────────────────────────────── */
+#circCanvas {
+  width: 100%;
+  height: 220px;
+  display: block;
+}
+
+/* ── SCENARIO INFO ──────────────────────────────────────── */
+.scenario-info {
+  background: rgba(0,200,255,0.03);
+  border: 1px solid rgba(0,200,255,0.1);
+  border-radius: 3px;
+  padding: 12px;
+  margin-top: 16px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted);
+  line-height: 1.7;
+}
+
+.scenario-info strong { color: var(--glow); }
+
+/* ── TABS ───────────────────────────────────────────────── */
+.tab-bar {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+}
+
+.tab {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: var(--muted);
+  padding: 10px 18px;
+  cursor: pointer;
+  text-transform: uppercase;
+  border-bottom: 2px solid transparent;
+  white-space: nowrap;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.tab:hover { color: var(--text); }
+.tab.active { color: var(--glow); border-bottom-color: var(--glow); }
+
+.tab-content { display: none; padding: 16px; }
+.tab-content.active { display: block; }
+
+/* ── LOG ────────────────────────────────────────────────── */
+#log {
+  background: #020810;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 12px;
+  height: 160px;
+  overflow-y: auto;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.8;
+}
+
+#log::-webkit-scrollbar { width: 4px; }
+#log::-webkit-scrollbar-track { background: transparent; }
+#log::-webkit-scrollbar-thumb { background: var(--border); }
+
+.log-entry { color: var(--muted); }
+.log-entry.ok   { color: var(--glow2); }
+.log-entry.warn { color: var(--warn); }
+.log-entry.err  { color: var(--danger); }
+
+/* ── FOOTER ─────────────────────────────────────────────── */
+footer {
+  position: relative; z-index: 10;
+  text-align: center;
+  padding: 24px;
+  border-top: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: 1px;
+}
+
+footer a { color: var(--glow); text-decoration: none; }
+
+/* ── GAUGE ──────────────────────────────────────────────── */
+.gauge-wrap { display: flex; gap: 16px; flex-wrap: wrap; }
+
+.gauge {
+  flex: 1; min-width: 120px;
+  display: flex; flex-direction: column; align-items: center;
+}
+
+.gauge svg { overflow: visible; }
+
+/* ── ANIMATIONS ─────────────────────────────────────────── */
+@keyframes fadeInUp {
+  from { opacity:0; transform:translateY(20px); }
+  to   { opacity:1; transform:translateY(0); }
+}
+
+.panel { animation: fadeInUp 0.6s ease both; }
+.panel:nth-child(2) { animation-delay: 0.15s; }
+
+/* ── RESPONSIVE ─────────────────────────────────────────── */
+@media (max-width: 600px) {
+  .outputs-grid { grid-template-columns: 1fr 1fr; }
+  .chart-label { width: 80px; font-size: 9px; }
+  h1 { font-size: 22px; }
+}
+</style>
+</head>
+
+<body>
+
+<!-- Star field canvas -->
+<canvas id="starfield"></canvas>
+
+<!-- HEADER -->
+<header>
+  <div class="header-grid-lines"></div>
+  <div class="badge">v1.0 · Atmospheric Sciences</div>
+  <h1>Earth System Simulation Engine</h1>
+  <p class="subtitle">GLOBAL AIR CIRCULATION · CLIMATE FEEDBACK · EXTREME WEATHER RISK MODELLING</p>
+</header>
+
+<!-- EARTH GLOBE -->
+<div id="earth-wrap">
+  <canvas id="earthCanvas" width="220" height="220"></canvas>
+</div>
+
+<!-- MAIN -->
+<main class="container">
+  <div class="sim-grid">
+
+    <!-- ── LEFT: CONTROLS ── -->
+    <div>
+      <div class="panel">
+        <div class="panel-header">
+          <div class="dot"></div>
+          <span class="panel-title">Input Variables</span>
+        </div>
+        <div class="panel-body">
+
+          <!-- SCENARIOS -->
+          <div class="driver-section-label">Quick Scenarios</div>
+          <select class="scenario-select" id="scenarioPicker" onchange="loadScenario(this.value)">
+            <option value="">— select a scenario —</option>
+            <option value="preindustrial">Pre-Industrial (1850)</option>
+            <option value="current">Current Trajectory (2024)</option>
+            <option value="bau">Business As Usual (2100)</option>
+            <option value="paris">Paris Agreement (2°C Path)</option>
+            <option value="netzero">Net-Zero 2050</option>
+            <option value="utopia">Green Utopia (2100)</option>
+            <option value="volcano">Volcanic Super-Eruption</option>
+            <option value="solar">Solar Maximum + High CO₂</option>
+          </select>
+
+          <!-- HUMAN DRIVERS -->
+          <div class="driver-section-label" style="margin-top:20px">⚡ Human Emission Drivers</div>
+          <div id="humanDrivers"></div>
+
+          <!-- NATURAL DRIVERS -->
+          <div class="driver-section-label">🌋 Natural Drivers</div>
+          <div id="naturalDrivers"></div>
+
+          <!-- ATMOSPHERIC STATE -->
+          <div class="driver-section-label">🧪 Atmospheric State</div>
+          <div id="atmosDrivers"></div>
+
+          <button class="run-btn" onclick="runSimulation()">
+            <span>⟳ &nbsp;Run Simulation</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── RIGHT: OUTPUTS ── -->
+    <div>
+      <!-- KEY METRICS GRID -->
+      <div class="panel">
+        <div class="panel-header">
+          <div class="dot" style="background:var(--glow2);box-shadow:0 0 8px var(--glow2)"></div>
+          <span class="panel-title">Simulation Outputs</span>
+          <span id="runBadge" style="margin-left:auto;font-family:var(--font-mono);font-size:9px;color:var(--muted);letter-spacing:1px"></span>
+        </div>
+        <div class="outputs-grid" id="metricsGrid"></div>
+      </div>
+
+      <!-- TABS -->
+      <div class="panel" style="margin-top:24px">
+        <div class="tab-bar">
+          <div class="tab active" onclick="switchTab('risk')">Risk Indices</div>
+          <div class="tab" onclick="switchTab('circ')">Circulation</div>
+          <div class="tab" onclick="switchTab('temp')">Temperature</div>
+          <div class="tab" onclick="switchTab('log')">Run Log</div>
+        </div>
+
+        <!-- RISK TAB -->
+        <div class="tab-content active" id="tab-risk">
+          <div id="riskChart"></div>
+        </div>
+
+        <!-- CIRCULATION TAB -->
+        <div class="tab-content" id="tab-circ">
+          <canvas id="circCanvas"></canvas>
+          <div id="circMetrics" style="margin-top:14px"></div>
+        </div>
+
+        <!-- TEMPERATURE TAB -->
+        <div class="tab-content" id="tab-temp">
+          <canvas id="tempChart" height="200"></canvas>
+        </div>
+
+        <!-- LOG TAB -->
+        <div class="tab-content" id="tab-log">
+          <div id="log"><span class="log-entry">— system ready —</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <p>Earth System Simulation Engine &nbsp;·&nbsp; Physics basis: IPCC AR6 · Simplified GCM &nbsp;·&nbsp;
+  <a href="https://github.com/YOUR_USERNAME/earth-climate-sim" target="_blank">GitHub ↗</a>
+  </p>
+</footer>
+
+<script>
+// ════════════════════════════════════════════════════════════════
+// STAR FIELD
+// ════════════════════════════════════════════════════════════════
+(function() {
+  const canvas = document.getElementById('starfield');
+  const ctx = canvas.getContext('2d');
+  let stars = [];
+  function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    stars = Array.from({length: 200}, () => ({
+      x: Math.random() * canvas.width,
+      y: Math.random() * canvas.height,
+      r: Math.random() * 1.2,
+      o: Math.random() * 0.7 + 0.1,
+      s: Math.random() * 0.3 + 0.05,
+    }));
+  }
+  function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    stars.forEach(s => {
+      s.o += Math.sin(Date.now() / 1000 * s.s) * 0.008;
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+      ctx.fillStyle = `rgba(200,230,255,${Math.max(0.05, Math.min(0.8, s.o))})`;
+      ctx.fill();
+    });
+    requestAnimationFrame(draw);
+  }
+  window.addEventListener('resize', resize);
+  resize(); draw();
+})();
+
+// ════════════════════════════════════════════════════════════════
+// EARTH GLOBE
+// ════════════════════════════════════════════════════════════════
+(function() {
+  const canvas = document.getElementById('earthCanvas');
+  const ctx = canvas.getContext('2d');
+  let rot = 0;
+  let heatLevel = 0.5; // updated by simulation
+
+  function draw() {
+    const W = canvas.width, H = canvas.height, cx = W/2, cy = H/2, R = W/2 - 6;
+    ctx.clearRect(0, 0, W, H);
+
+    // Ocean base
+    const ocean = ctx.createRadialGradient(cx-R*0.3, cy-R*0.3, 0, cx, cy, R);
+    const heatColor = `hsl(${200 - heatLevel*140},80%,${25 + heatLevel*10}%)`;
+    ocean.addColorStop(0, '#1a6fa0');
+    ocean.addColorStop(0.6, heatColor);
+    ocean.addColorStop(1, '#020a14');
+    ctx.beginPath();
+    ctx.arc(cx, cy, R, 0, Math.PI*2);
+    ctx.fillStyle = ocean;
+    ctx.fill();
+
+    // Grid lines (lat/lon)
+    ctx.save();
+    ctx.clip();
+    ctx.strokeStyle = 'rgba(0,200,255,0.10)';
+    ctx.lineWidth = 0.5;
+    for (let lat = -80; lat <= 80; lat += 20) {
+      const y0 = cy + R * Math.sin(lat * Math.PI/180);
+      const rLat = R * Math.cos(lat * Math.PI/180);
+      ctx.beginPath();
+      ctx.ellipse(cx, y0, rLat, rLat * 0.18, 0, 0, Math.PI*2);
+      ctx.stroke();
+    }
+    for (let lon = 0; lon < 360; lon += 30) {
+      const angle = (lon + rot) * Math.PI/180;
+      const x1 = cx + R * Math.sin(angle);
+      const x2 = cx - R * Math.sin(angle);
+      ctx.beginPath();
+      ctx.moveTo(x1, cy - R);
+      ctx.bezierCurveTo(x1*1.5-cx*0.5, cy, x1*1.5-cx*0.5, cy, x1, cy + R);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // Hadley cell bands
+    const bands = [
+      { lat: 0,  w: 30, col: `rgba(255,80,20,${0.08 + heatLevel*0.08})` },  // ITCZ
+      { lat: 30, w: 20, col: `rgba(255,180,0,${0.05 + heatLevel*0.05})` },   // subtropical high
+    ];
+    ctx.save();
+    ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI*2); ctx.clip();
+    bands.forEach(b => {
+      const y0 = cy + R * Math.sin((b.lat + b.w/2) * Math.PI/180);
+      const y1 = cy + R * Math.sin((b.lat - b.w/2) * Math.PI/180);
+      const grad = ctx.createLinearGradient(0, y1, 0, y0);
+      grad.addColorStop(0, 'transparent');
+      grad.addColorStop(0.5, b.col);
+      grad.addColorStop(1, 'transparent');
+      ctx.fillStyle = grad;
+      ctx.fillRect(cx - R, Math.min(y0,y1), R*2, Math.abs(y0-y1));
+    });
+    ctx.restore();
+
+    // Atmosphere glow
+    const atm = ctx.createRadialGradient(cx, cy, R*0.9, cx, cy, R*1.2);
+    atm.addColorStop(0, `rgba(0,200,255,${0.05 + heatLevel * 0.12})`);
+    atm.addColorStop(0.5, `rgba(0,150,255,0.03)`);
+    atm.addColorStop(1, 'transparent');
+    ctx.beginPath(); ctx.arc(cx, cy, R*1.2, 0, Math.PI*2);
+    ctx.fillStyle = atm; ctx.fill();
+
+    // Specular highlight
+    const spec = ctx.createRadialGradient(cx - R*0.35, cy - R*0.35, 0, cx, cy, R);
+    spec.addColorStop(0, 'rgba(255,255,255,0.18)');
+    spec.addColorStop(0.5, 'transparent');
+    ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI*2);
+    ctx.fillStyle = spec; ctx.fill();
+
+    // Terminator
+    const term = ctx.createLinearGradient(cx + R*0.4, 0, cx + R*0.9, 0);
+    term.addColorStop(0, 'transparent');
+    term.addColorStop(1, 'rgba(0,0,0,0.55)');
+    ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI*2);
+    ctx.fillStyle = term; ctx.fill();
+
+    rot += 0.12;
+    requestAnimationFrame(draw);
+  }
+  draw();
+  window.updateEarthHeat = function(v) { heatLevel = v; };
+})();
+
+// ════════════════════════════════════════════════════════════════
+// DRIVER DEFINITIONS
+// ════════════════════════════════════════════════════════════════
+const HUMAN_DRIVERS = [
+  { id:'fossil_fuel',    label:'Fossil Fuel Use',        def:50 },
+  { id:'deforestation',  label:'Deforestation Rate',     def:40 },
+  { id:'industry',       label:'Industrial Emissions',   def:45 },
+  { id:'transport',      label:'Transport Emissions',    def:50 },
+  { id:'agriculture',    label:'Agriculture Methane',    def:35 },
+  { id:'urbanization',   label:'Urbanization',           def:60 },
+  { id:'renewables',     label:'Renewable Adoption',     def:25, mitigation:true },
+  { id:'carbon_capture', label:'Carbon Capture',         def:10, mitigation:true },
+];
+
+const NATURAL_DRIVERS = [
+  { id:'solar',      label:'Solar Radiation Δ (W/m²)', def:0,  min:-5, max:5, step:0.1 },
+  { id:'volcanic',   label:'Volcanic Activity',         def:0,  min:0, max:100 },
+  { id:'ocean_heat', label:'Ocean Heat Uptake',         def:50, min:0, max:100 },
+  { id:'ice_cover',  label:'Ice Cover',                 def:50, min:0, max:100 },
+  { id:'albedo',     label:'Surface Albedo (%)',        def:30, min:10, max:60 },
+];
+
+const ATMOS_DRIVERS = [
+  { id:'co2',      label:'CO₂ (ppm)',   def:421, min:280, max:1200, step:1  },
+  { id:'ch4',      label:'CH₄ (ppb)',   def:1900, min:700, max:6000, step:10 },
+  { id:'aerosols', label:'Aerosols (AOD)', def:0.10, min:0.0, max:2.0, step:0.01 },
+];
+
+// ── Render sliders ────────────────────────────────────────────
+function makeSlider(d, containerId) {
+  const c = document.getElementById(containerId);
+  const min  = d.min  !== undefined ? d.min  : 0;
+  const max  = d.max  !== undefined ? d.max  : 100;
+  const step = d.step !== undefined ? d.step : 1;
+  const cls  = d.mitigation ? ' mitigation' : '';
+  c.insertAdjacentHTML('beforeend', `
+    <div class="driver-row">
+      <div>
+        <div class="driver-label">${d.label}</div>
+        <input type="range" class="driver-slider${cls}" id="s_${d.id}"
+          min="${min}" max="${max}" step="${step}" value="${d.def}"
+          oninput="document.getElementById('v_${d.id}').textContent=parseFloat(this.value).toFixed(step<1?2:0)">
+      </div>
+      <div class="driver-val" id="v_${d.id}">${d.def}</div>
+    </div>
+  `);
+}
+
+HUMAN_DRIVERS.forEach(d  => makeSlider(d,  'humanDrivers'));
+NATURAL_DRIVERS.forEach(d => makeSlider(d, 'naturalDrivers'));
+ATMOS_DRIVERS.forEach(d  => makeSlider(d,  'atmosDrivers'));
+
+function getVal(id) { return parseFloat(document.getElementById('s_' + id).value); }
+function setVal(id, v) {
+  const el  = document.getElementById('s_' + id);
+  const vel = document.getElementById('v_' + id);
+  if (!el) return;
+  el.value = v;
+  const step = parseFloat(el.step) || 1;
+  vel.textContent = parseFloat(v).toFixed(step < 1 ? 2 : 0);
+}
+
+// ════════════════════════════════════════════════════════════════
+// SCENARIO PRESETS
+// ════════════════════════════════════════════════════════════════
+const SCENARIO_DATA = {
+  preindustrial: { fossil_fuel:2,  deforestation:10, industry:3,  transport:2,  agriculture:15, urbanization:5,  renewables:0,  carbon_capture:0,  co2:280,  ch4:722,  aerosols:0.05, volcanic:0,   solar:0,    ocean_heat:50, ice_cover:60, albedo:32 },
+  current:       { fossil_fuel:75, deforestation:55, industry:65, transport:65, agriculture:50, urbanization:70, renewables:30, carbon_capture:8,  co2:421,  ch4:1900, aerosols:0.12, volcanic:0,   solar:0,    ocean_heat:50, ice_cover:50, albedo:30 },
+  bau:           { fossil_fuel:90, deforestation:80, industry:85, transport:80, agriculture:75, urbanization:90, renewables:15, carbon_capture:5,  co2:850,  ch4:4500, aerosols:0.15, volcanic:0,   solar:0,    ocean_heat:50, ice_cover:25, albedo:26 },
+  paris:         { fossil_fuel:40, deforestation:25, industry:35, transport:35, agriculture:30, urbanization:55, renewables:65, carbon_capture:30, co2:480,  ch4:2200, aerosols:0.10, volcanic:0,   solar:0,    ocean_heat:55, ice_cover:48, albedo:30 },
+  netzero:       { fossil_fuel:15, deforestation:10, industry:15, transport:12, agriculture:20, urbanization:60, renewables:85, carbon_capture:60, co2:430,  ch4:1950, aerosols:0.09, volcanic:0,   solar:0,    ocean_heat:52, ice_cover:50, albedo:30 },
+  utopia:        { fossil_fuel:2,  deforestation:5,  industry:5,  transport:3,  agriculture:10, urbanization:45, renewables:98, carbon_capture:90, co2:340,  ch4:1600, aerosols:0.07, volcanic:0,   solar:0,    ocean_heat:50, ice_cover:55, albedo:31 },
+  volcano:       { fossil_fuel:50, deforestation:40, industry:45, transport:50, agriculture:35, urbanization:60, renewables:25, carbon_capture:10, co2:421,  ch4:1900, aerosols:1.00, volcanic:100, solar:-2,   ocean_heat:50, ice_cover:55, albedo:35 },
+  solar:         { fossil_fuel:80, deforestation:60, industry:70, transport:70, agriculture:55, urbanization:75, renewables:20, carbon_capture:5,  co2:700,  ch4:3500, aerosols:0.08, volcanic:0,   solar:2.5,  ocean_heat:45, ice_cover:30, albedo:25 },
+};
+
+function loadScenario(name) {
+  if (!name) return;
+  const d = SCENARIO_DATA[name];
+  Object.keys(d).forEach(k => setVal(k, d[k]));
+  log(`Loaded scenario: <strong style="color:var(--glow)">${document.getElementById('scenarioPicker').options[document.getElementById('scenarioPicker').selectedIndex].text}</strong>`, 'ok');
+  runSimulation();
+}
+
+// ════════════════════════════════════════════════════════════════
+// PHYSICS ENGINE (JS port of climate_engine.py)
+// ════════════════════════════════════════════════════════════════
+const CO2_BASELINE  = 280.0;
+const ECS           = 3.0;
+
+function computeEffectiveGHG(h, atm) {
+  const emissionFactor = (
+    h.fossil_fuel    * 0.30 +
+    h.deforestation  * 0.15 +
+    h.industry       * 0.20 +
+    h.transport      * 0.15 +
+    h.agriculture    * 0.10 +
+    h.urbanization   * 0.05
+  ) / 100.0;
+
+  const mitigationFactor = (
+    h.renewables       * 0.60 +
+    h.carbon_capture   * 0.40
+  ) / 100.0;
+
+  const net = Math.max(0, Math.min(1, emissionFactor - mitigationFactor * 0.5));
+  const effCO2 = atm.co2 + net * 800.0;
+  const ch4Factor = (h.agriculture * 0.50 + h.fossil_fuel * 0.30 + h.deforestation * 0.20) / 100.0;
+  const effCH4 = atm.ch4 + ch4Factor * 3000.0;
+  return { effCO2, effCH4 };
+}
+
+function computeRF(effCO2, effCH4, nat, atm) {
+  const rfCO2  = 5.35 * Math.log(effCO2 / CO2_BASELINE);
+  const rfCH4  = 0.036 * (Math.sqrt(effCH4) - Math.sqrt(722));
+  const rfAero = -1.5  * atm.aerosols;
+  const rfSolar= (nat.solar / 4.0) * (1 - 0.30);
+  const rfVolc = -0.03 * nat.volcanic;
+  const deltaAlbedo = (nat.ice_cover - 50) * 0.001
+    - (/* defor hack */ 0) * 0.0005
+    - 0;
+  const rfAlbedo = -(deltaAlbedo / 4.0) * 1361;
+  return rfCO2 + rfCH4 + rfAero + rfSolar + rfVolc + rfAlbedo;
+}
+
+function computeTemp(rf, nat) {
+  const lambda    = ECS / (5.35 * Math.log(2));
+  const oceanDamp = 1.0 - (nat.ocean_heat / 100) * 0.30;
+  let dtGlobal    = lambda * rf * oceanDamp;
+  const polarAmp  = 2.5 + Math.max(0, Math.min(1, dtGlobal * 0.15));
+  const dtArctic  = dtGlobal * polarAmp;
+  const dtTrop    = dtGlobal * 0.75;
+  return { dtGlobal, dtArctic, dtTrop, polarAmp };
+}
+
+function computeCirculation(dt, h) {
+  const hadleyExp = dt.dtGlobal * 0.5 + (h.fossil_fuel - h.renewables) / 100 * 1.5;
+  const eqPoleRed = Math.max(0, Math.min(1, (dt.dtArctic - dt.dtGlobal) / 30));
+  const jetInst   = Math.max(0, Math.min(10,
+    eqPoleRed * 8.0 + dt.dtGlobal * 0.4 + h.deforestation / 100 * 1.5));
+  const itczShift = dt.dtGlobal * 0.3 + (h.urbanization - 50) / 100 * 0.5;
+  const tradeWind = Math.max(-40, Math.min(10, -(hadleyExp * 4 + dt.dtGlobal * 1.5)));
+  const ferrelDis = Math.max(0, Math.min(1, eqPoleRed * 0.7));
+  const polarDis  = Math.max(0, Math.min(1, dt.dtArctic / 10 * 0.8));
+  const stability = Math.max(0, Math.min(10,
+    10 - (ferrelDis * 3 + polarDis * 2.5 + jetInst * 0.3 + hadleyExp * 0.15)));
+  return { hadleyExp, jetInst, itczShift, tradeWind, stability };
+}
+
+function computeRisk(dt, circ, h) {
+  const moisture   = 0.07 * dt.dtGlobal;
+  const stormRisk  = Math.max(0, Math.min(10,
+    dt.dtGlobal * 1.2 + moisture * 15 + circ.jetInst * 0.3 + h.fossil_fuel / 100 * 1.5));
+  const monsoon    = moisture * 100 * 0.8 - circ.hadleyExp * 3 - h.deforestation * 0.15;
+  const drought    = Math.max(0, Math.min(10,
+    dt.dtGlobal * 0.8 + circ.hadleyExp * 0.6 + h.deforestation / 100 * 2));
+  const flood      = Math.max(0, Math.min(10,
+    moisture * 20 + circ.jetInst * 0.5 + dt.dtGlobal * 0.6));
+  return { stormRisk, monsoon, drought, flood };
+}
+
+function runSimulation() {
+  const start = performance.now();
+  log('⟳ Running simulation...', '');
+
+  const h = {
+    fossil_fuel: getVal('fossil_fuel'), deforestation: getVal('deforestation'),
+    industry: getVal('industry'),       transport: getVal('transport'),
+    agriculture: getVal('agriculture'), urbanization: getVal('urbanization'),
+    renewables: getVal('renewables'),   carbon_capture: getVal('carbon_capture'),
+  };
+  const nat = {
+    solar: getVal('solar'),       volcanic: getVal('volcanic'),
+    ocean_heat: getVal('ocean_heat'), ice_cover: getVal('ice_cover'),
+    albedo: getVal('albedo'),
+  };
+  const atm = { co2: getVal('co2'), ch4: getVal('ch4'), aerosols: getVal('aerosols') };
+
+  const { effCO2, effCH4 } = computeEffectiveGHG(h, atm);
+  const rf   = computeRF(effCO2, effCH4, nat, atm);
+  const dt   = computeTemp(rf, nat);
+  const circ = computeCirculation(dt, h);
+  const risk = computeRisk(dt, circ, h);
+
+  const elapsed = (performance.now() - start).toFixed(1);
+  log(`✓ Done in ${elapsed}ms &nbsp;|&nbsp; RF=${rf.toFixed(2)} W/m² &nbsp;|&nbsp; ΔT=${dt.dtGlobal.toFixed(2)}°C`, 'ok');
+
+  // Update outputs
+  updateMetrics({ dt, circ, risk, rf, effCO2 });
+  drawRiskBars({ stormRisk: risk.stormRisk, droughtRisk: risk.drought, floodRisk: risk.flood, jetInst: circ.jetInst, stability: circ.stability });
+  drawCirculation(circ, dt);
+  drawTempChart(dt);
+  updateEarth(dt.dtGlobal);
+
+  document.getElementById('runBadge').textContent = `LAST RUN ${new Date().toLocaleTimeString()}`;
+}
+
+// ── Update Earth heat level ───────────────────────────────────
+function updateEarth(dtGlobal) {
+  const normalised = Math.max(0, Math.min(1, (dtGlobal + 5) / 20));
+  window.updateEarthHeat(normalised);
+}
+
+// ════════════════════════════════════════════════════════════════
+// METRIC CARDS
+// ════════════════════════════════════════════════════════════════
+const METRICS_DEF = [
+  { key:'dtGlobal',    icon:'🌡',  name:'Global ΔT',          unit:'°C',    format:v=>v.toFixed(2), color:'#ff4466', src:'dt' },
+  { key:'dtArctic',    icon:'🧊',  name:'Arctic ΔT',          unit:'°C',    format:v=>v.toFixed(2), color:'#00c8ff', src:'dt' },
+  { key:'rfVal',       icon:'📡',  name:'Radiative Forcing',  unit:'W/m²',  format:v=>v.toFixed(2), color:'#f0a020', src:'rf' },
+  { key:'effCO2',      icon:'🏭',  name:'Effective CO₂',      unit:'ppm',   format:v=>v.toFixed(0), color:'#e06030', src:'effCO2' },
+  { key:'stability',   icon:'🔄',  name:'Circ. Stability',    unit:'/10',   format:v=>v.toFixed(1), color:'#00ff9d', src:'circ' },
+  { key:'jetInst',     icon:'💨',  name:'Jet Stream Inst.',   unit:'/10',   format:v=>v.toFixed(1), color:'#a070ff', src:'circ' },
+  { key:'stormRisk',   icon:'⛈',  name:'Storm Risk',         unit:'/10',   format:v=>v.toFixed(1), color:'#ff6b35', src:'risk' },
+  { key:'polarAmp',    icon:'🌐',  name:'Polar Amplification',unit:'×',     format:v=>v.toFixed(2), color:'#60d0ff', src:'dt' },
+  { key:'hadleyExp',   icon:'🌀',  name:'Hadley Expansion',   unit:'°',     format:v=>v.toFixed(2), color:'#ffd060', src:'circ' },
+];
+
+function initMetricCards() {
+  const grid = document.getElementById('metricsGrid');
+  grid.innerHTML = METRICS_DEF.map(m => `
+    <div class="metric-card" id="mc_${m.key}" style="--accent-color:${m.color}">
+      <span class="metric-icon">${m.icon}</span>
+      <div class="metric-name">${m.name}</div>
+      <div class="metric-value" id="mv_${m.key}">—</div>
+      <div class="metric-unit">${m.unit}</div>
+    </div>
+  `).join('');
+}
+
+function updateMetrics({ dt, circ, risk, rf, effCO2 }) {
+  const vals = {
+    dtGlobal: dt.dtGlobal,  dtArctic: dt.dtArctic,
+    rfVal: rf,              effCO2,
+    stability: circ.stability, jetInst: circ.jetInst,
+    stormRisk: risk.stormRisk, polarAmp: dt.polarAmp,
+    hadleyExp: circ.hadleyExp,
+  };
+  METRICS_DEF.forEach(m => {
+    const el  = document.getElementById('mv_' + m.key);
+    const cel = document.getElementById('mc_' + m.key);
+    if (!el) return;
+    el.textContent = m.format(vals[m.key]);
+    // Colour value by magnitude
+    const v = vals[m.key];
+    if (m.key === 'dtGlobal' || m.key === 'dtArctic') {
+      el.style.color = v > 3 ? '#ff2244' : v > 1.5 ? '#ff9900' : v > 0 ? '#ffee44' : '#00ff9d';
+    }
+    cel.classList.remove('updated');
+    void cel.offsetWidth;
+    cel.classList.add('updated');
+  });
+}
+
+// ════════════════════════════════════════════════════════════════
+// RISK BARS
+// ════════════════════════════════════════════════════════════════
+const RISK_BARS = [
+  { key:'stormRisk',  label:'Storm Risk',           max:10, col:'#ff6b35' },
+  { key:'droughtRisk',label:'Drought Risk',          max:10, col:'#f0a020' },
+  { key:'floodRisk',  label:'Flood Risk',            max:10, col:'#4090ff' },
+  { key:'jetInst',    label:'Jet Stream Instability',max:10, col:'#a070ff' },
+  { key:'stability',  label:'Circulation Stability', max:10, col:'#00ff9d', inverse:true },
+];
+
+function initRiskBars() {
+  document.getElementById('riskChart').innerHTML = RISK_BARS.map(b => `
+    <div class="chart-row">
+      <div class="chart-label">${b.label}</div>
+      <div class="chart-track">
+        <div class="chart-fill" id="rf_${b.key}" style="width:0%;background:${b.col}"></div>
+      </div>
+      <div class="chart-num" id="rn_${b.key}" style="color:${b.col}">—</div>
+    </div>
+  `).join('');
+}
+
+function drawRiskBars(data) {
+  RISK_BARS.forEach(b => {
+    const v = data[b.key];
+    const pct = (v / b.max) * 100;
+    document.getElementById('rf_' + b.key).style.width = pct + '%';
+    document.getElementById('rn_' + b.key).textContent = v.toFixed(1);
+  });
+}
+
+// ════════════════════════════════════════════════════════════════
+// CIRCULATION DIAGRAM
+// ════════════════════════════════════════════════════════════════
+function drawCirculation(circ, dt) {
+  const canvas = document.getElementById('circCanvas');
+  if (!canvas) return;
+  canvas.width  = canvas.offsetWidth;
+  canvas.height = 220;
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+
+  ctx.clearRect(0, 0, W, H);
+
+  // Background gradient
+  const bg = ctx.createLinearGradient(0, 0, W, 0);
+  bg.addColorStop(0, '#060f1e'); bg.addColorStop(1, '#040a18');
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+
+  // Latitude lines
+  const lats = [90, 60, 30, 0, -30, -60, -90];
+  lats.forEach((lat, i) => {
+    const y = H * i / (lats.length - 1);
+    ctx.strokeStyle = 'rgba(0,200,255,0.07)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 6]);
+    ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(100,160,200,0.5)';
+    ctx.font = '9px Share Tech Mono';
+    ctx.fillText(`${lat > 0 ? lat + '°N' : lat < 0 ? Math.abs(lat) + '°S' : 'EQ'}`, 4, y - 3);
+  });
+
+  // Cell arrows helper
+  function drawCell(yTop, yBot, dir, label, col, strength) {
+    const yMid = (yTop + yBot) / 2;
+    const x1 = W * 0.15, x2 = W * 0.85;
+    const alpha = 0.3 + strength * 0.5;
+    ctx.strokeStyle = col + Math.round(alpha * 255).toString(16).padStart(2,'0');
+    ctx.lineWidth = 2;
+
+    // Left arrow
+    ctx.beginPath();
+    ctx.moveTo(x1, dir > 0 ? yTop : yBot);
+    ctx.bezierCurveTo(x1, yMid, x2, yMid, x2, dir > 0 ? yBot : yTop);
+    ctx.stroke();
+
+    // Arrowhead
+    const ax = x2, ay = dir > 0 ? yBot : yTop;
+    ctx.fillStyle = col + Math.round(alpha * 255).toString(16).padStart(2,'0');
+    ctx.beginPath();
+    ctx.moveTo(ax, ay);
+    ctx.lineTo(ax - 8, ay + (dir > 0 ? -8 : 8));
+    ctx.lineTo(ax + 8, ay + (dir > 0 ? -8 : 8));
+    ctx.fill();
+
+    // Label
+    ctx.fillStyle = col + 'cc';
+    ctx.font = 'bold 9px Orbitron';
+    ctx.textAlign = 'center';
+    ctx.fillText(label, W / 2, yMid + 4);
+    ctx.textAlign = 'left';
+  }
+
+  const hadleyStrength = Math.max(0, Math.min(1, 1 - circ.hadleyExp / 15));
+  const ferrelStrength = Math.max(0, Math.min(1, 1 - circ.stability / 10 * 0.5));
+
+  // NH Hadley
+  drawCell(H * 0 / 6, H * 2 / 6, 1,  'HADLEY (NH)', '#ff8040', hadleyStrength);
+  // NH Ferrel
+  drawCell(H * 2 / 6, H * 3 / 6, -1, 'FERREL (NH)', '#00c8ff', ferrelStrength);
+  // SH Hadley
+  drawCell(H * 4 / 6, H * 6 / 6, -1, 'HADLEY (SH)', '#ff8040', hadleyStrength);
+  // SH Ferrel
+  drawCell(H * 3 / 6, H * 4 / 6, 1,  'FERREL (SH)', '#00c8ff', ferrelStrength);
+
+  // ITCZ
+  const itczY = H/2 + circ.itczShift * (H / 60);
+  ctx.strokeStyle = `rgba(255,60,60,0.6)`;
+  ctx.lineWidth = 2; ctx.setLineDash([8, 4]);
+  ctx.beginPath(); ctx.moveTo(0, itczY); ctx.lineTo(W, itczY); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = 'rgba(255,80,80,0.8)';
+  ctx.font = '9px Share Tech Mono';
+  ctx.fillText(`ITCZ  (${circ.itczShift > 0 ? '+' : ''}${circ.itczShift.toFixed(1)}°)`, W - 120, itczY - 4);
+
+  // Jet stream
+  const jetY = H * 2 / 6;
+  const wobble = circ.jetInst * 5;
+  ctx.strokeStyle = `rgba(160,100,255,${0.3 + circ.jetInst / 20})`;
+  ctx.lineWidth = 2.5;
+  ctx.beginPath(); ctx.moveTo(0, jetY);
+  for (let x = 0; x <= W; x += 10) {
+    const y = jetY + Math.sin(x / (40 - circ.jetInst * 2)) * wobble;
+    ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+  ctx.fillStyle = 'rgba(180,120,255,0.8)';
+  ctx.font = '9px Share Tech Mono';
+  ctx.fillText(`POLAR JET  instability ${circ.jetInst.toFixed(1)}/10`, 8, jetY - 8);
+
+  // Metrics below
+  document.getElementById('circMetrics').innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:10px;font-family:var(--font-mono);font-size:10px;">
+      ${[
+        ['Hadley Exp.', circ.hadleyExp.toFixed(2) + '°'],
+        ['Trade Wind Δ', circ.tradeWind.toFixed(1) + '%'],
+        ['ITCZ Shift',  circ.itczShift.toFixed(2) + '°'],
+      ].map(([l,v]) => `<div style="background:#0a1525;border:1px solid #0d2540;padding:8px 10px;border-radius:3px;">
+        <div style="color:var(--muted);font-size:9px;letter-spacing:1px;margin-bottom:4px">${l}</div>
+        <div style="color:var(--glow);font-size:14px;font-family:var(--font-hd)">${v}</div>
+      </div>`).join('')}
+    </div>
+  `;
+}
+
+// ════════════════════════════════════════════════════════════════
+// TEMPERATURE CANVAS
+// ════════════════════════════════════════════════════════════════
+function drawTempChart(dt) {
+  const canvas = document.getElementById('tempChart');
+  if (!canvas) return;
+  canvas.width  = canvas.offsetWidth || 400;
+  canvas.height = 200;
+  const ctx  = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+
+  ctx.clearRect(0, 0, W, H);
+
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, '#060f1e'); bg.addColorStop(1, '#030810');
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+
+  const vals = [
+    { label:'Tropical', v: dt.dtTrop,   col:'#ff9944' },
+    { label:'Global',   v: dt.dtGlobal, col:'#ff4466' },
+    { label:'Arctic',   v: dt.dtArctic, col:'#00c8ff' },
+  ];
+
+  // Scale
+  const allV   = vals.map(d => d.v);
+  const maxAbs = Math.max(Math.abs(Math.min(...allV)), Math.abs(Math.max(...allV)), 0.5);
+  const scale  = (H * 0.4) / maxAbs;
+  const mid    = H / 2;
+
+  // Zero line
+  ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+  ctx.lineWidth = 1; ctx.setLineDash([4, 6]);
+  ctx.beginPath(); ctx.moveTo(40, mid); ctx.lineTo(W - 20, mid); ctx.stroke();
+  ctx.setLineDash([]);
+
+  const bw = 60, gap = 40;
+  const totalW = vals.length * (bw + gap) - gap;
+  const startX = (W - totalW) / 2;
+
+  vals.forEach((d, i) => {
+    const x = startX + i * (bw + gap);
+    const barH = d.v * scale;
+    const y = d.v >= 0 ? mid - barH : mid;
+    const h = Math.abs(barH);
+
+    const grad = ctx.createLinearGradient(0, y, 0, y + h);
+    grad.addColorStop(0, d.col + 'ff');
+    grad.addColorStop(1, d.col + '44');
+    ctx.fillStyle = grad;
+    ctx.fillRect(x, y, bw, h || 1);
+
+    // Value
+    ctx.fillStyle = '#fff';
+    ctx.font = 'bold 14px Orbitron';
+    ctx.textAlign = 'center';
+    ctx.fillText((d.v > 0 ? '+' : '') + d.v.toFixed(2), x + bw / 2, d.v >= 0 ? y - 8 : y + h + 18);
+
+    ctx.fillStyle = d.col;
+    ctx.font = '9px Share Tech Mono';
+    ctx.fillText(d.label, x + bw / 2, H - 8);
+    ctx.textAlign = 'left';
+  });
+
+  // Y axis labels
+  ctx.fillStyle = 'rgba(100,160,200,0.5)';
+  ctx.font = '9px Share Tech Mono';
+  ctx.fillText('°C', 4, mid - 2);
+}
+
+// ════════════════════════════════════════════════════════════════
+// TAB SWITCHING
+// ════════════════════════════════════════════════════════════════
+function switchTab(id) {
+  document.querySelectorAll('.tab').forEach((t, i) => {
+    const ids = ['risk','circ','temp','log'];
+    t.classList.toggle('active', ids[i] === id);
+  });
+  document.querySelectorAll('.tab-content').forEach(c => {
+    c.classList.toggle('active', c.id === 'tab-' + id);
+  });
+}
+
+// ════════════════════════════════════════════════════════════════
+// LOG
+// ════════════════════════════════════════════════════════════════
+function log(msg, type='') {
+  const el = document.getElementById('log');
+  const ts = new Date().toLocaleTimeString('en-GB', {hour12:false});
+  el.innerHTML += `\n<span class="log-entry ${type}">[${ts}] ${msg}</span>`;
+  el.scrollTop = el.scrollHeight;
+}
+
+// ════════════════════════════════════════════════════════════════
+// INIT
+// ════════════════════════════════════════════════════════════════
+initMetricCards();
+initRiskBars();
+runSimulation(); // Run on load with defaults
+
+log('Earth System Simulation Engine v1.0 initialized', 'ok');
+log('Physics: IPCC AR6 · ECS=3.0°C/doubling · Clausius-Clapeyron', 'ok');
+</script>
+</body>
+</html>
