@@ -1,0 +1,1290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Earth Climate Simulation Engine</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@300;400;500;600;700&family=Orbitron:wght@400;500;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --co2:   #ff6b35;
+  --ch4:   #a8ff3e;
+  --aero:  #38beff;
+  --o3:    #cc44ff;
+  --h2o:   #44ddff;
+  --n2o:   #ffdd00;
+  --glow:  #00e5ff;
+  --green: #00ff88;
+  --red:   #ff2244;
+  --warn:  #ff9900;
+  --bg:    #000205;
+  --panel: rgba(2,12,28,0.85);
+  --border:rgba(0,200,255,0.15);
+  --text:  #cce8ff;
+  --muted: #3a6080;
+  --font-hd:'Orbitron',sans-serif;
+  --font-ui:'Rajdhani',sans-serif;
+  --font-mono:'Share Tech Mono',monospace;
+}
+html{overflow-x:hidden}
+body{
+  background:var(--bg);
+  color:var(--text);
+  font-family:var(--font-ui);
+  min-height:100vh;
+  overflow-x:hidden;
+}
+
+/* ═══════════ SPACE BACKGROUND ═══════════ */
+#space-bg{
+  position:fixed;inset:0;z-index:0;
+  background:radial-gradient(ellipse 120% 80% at 20% 40%,
+    rgba(10,0,30,0.9) 0%,
+    rgba(0,5,20,0.95) 40%,
+    #000205 100%);
+}
+#nebula{position:fixed;inset:0;z-index:1;pointer-events:none;}
+#stars-canvas{position:fixed;inset:0;z-index:2;pointer-events:none;}
+
+/* ═══════════ LAYOUT ═══════════ */
+.page-wrap{
+  position:relative;z-index:10;
+  display:grid;
+  grid-template-columns:320px 1fr 300px;
+  grid-template-rows:auto 1fr auto;
+  min-height:100vh;
+  gap:0;
+}
+@media(max-width:1200px){
+  .page-wrap{grid-template-columns:280px 1fr 260px;}
+}
+@media(max-width:900px){
+  .page-wrap{grid-template-columns:1fr;grid-template-rows:auto;}
+}
+
+/* ═══════════ HEADER ═══════════ */
+header{
+  grid-column:1/-1;
+  padding:18px 32px 16px;
+  border-bottom:1px solid var(--border);
+  display:flex;align-items:center;justify-content:space-between;
+  background:rgba(0,5,15,0.6);
+  backdrop-filter:blur(12px);
+}
+.logo{
+  display:flex;align-items:center;gap:14px;
+}
+.logo-icon{
+  width:38px;height:38px;
+  border:1.5px solid var(--glow);
+  border-radius:50%;
+  display:flex;align-items:center;justify-content:center;
+  box-shadow:0 0 16px rgba(0,229,255,0.4);
+  font-size:18px;
+}
+.logo-text h1{
+  font-family:var(--font-hd);
+  font-size:14px;letter-spacing:3px;
+  font-weight:700;
+  background:linear-gradient(90deg,#fff 0%,var(--glow) 60%,var(--green) 100%);
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+}
+.logo-text p{
+  font-family:var(--font-mono);font-size:9px;
+  color:var(--muted);letter-spacing:2px;margin-top:1px;
+}
+.header-stats{
+  display:flex;gap:28px;
+}
+.hstat{
+  text-align:center;
+}
+.hstat-val{
+  font-family:var(--font-hd);font-size:18px;font-weight:700;
+  color:#fff;transition:color 0.5s;
+}
+.hstat-lbl{
+  font-family:var(--font-mono);font-size:8px;color:var(--muted);
+  letter-spacing:1.5px;margin-top:1px;
+}
+.status-pill{
+  display:flex;align-items:center;gap:7px;
+  font-family:var(--font-mono);font-size:9px;
+  color:var(--green);letter-spacing:1px;
+  border:1px solid rgba(0,255,136,0.3);
+  padding:5px 12px;border-radius:20px;
+}
+.status-dot{
+  width:6px;height:6px;border-radius:50%;
+  background:var(--green);
+  box-shadow:0 0 8px var(--green);
+  animation:pulse 2s ease-in-out infinite;
+}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}
+
+/* ═══════════ LEFT PANEL ═══════════ */
+.left-panel{
+  grid-row:2;
+  border-right:1px solid var(--border);
+  background:var(--panel);
+  backdrop-filter:blur(20px);
+  overflow-y:auto;
+  padding:0 0 20px 0;
+  max-height:calc(100vh - 65px);
+}
+.left-panel::-webkit-scrollbar{width:3px}
+.left-panel::-webkit-scrollbar-track{background:transparent}
+.left-panel::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+
+/* ═══════════ CENTER ═══════════ */
+.center-panel{
+  grid-row:2;
+  display:flex;flex-direction:column;align-items:center;
+  justify-content:center;
+  padding:20px;
+  position:relative;
+}
+
+/* ═══════════ RIGHT PANEL ═══════════ */
+.right-panel{
+  grid-row:2;
+  border-left:1px solid var(--border);
+  background:var(--panel);
+  backdrop-filter:blur(20px);
+  overflow-y:auto;
+  padding:0 0 20px 0;
+  max-height:calc(100vh - 65px);
+}
+.right-panel::-webkit-scrollbar{width:3px}
+.right-panel::-webkit-scrollbar-track{background:transparent}
+.right-panel::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+
+/* ═══════════ SECTION HEADERS ═══════════ */
+.sec-head{
+  display:flex;align-items:center;gap:8px;
+  padding:11px 16px;
+  border-bottom:1px solid var(--border);
+  position:sticky;top:0;
+  background:rgba(0,8,20,0.95);
+  backdrop-filter:blur(10px);
+  z-index:5;
+}
+.sec-dot{
+  width:5px;height:5px;border-radius:50%;
+  background:var(--glow);box-shadow:0 0 6px var(--glow);
+}
+.sec-title{
+  font-family:var(--font-hd);font-size:9px;
+  letter-spacing:2.5px;color:var(--glow);
+  text-transform:uppercase;
+}
+
+/* ═══════════ DRIVER CONTROLS ═══════════ */
+.driver-group{padding:12px 14px 6px;}
+.driver-group-label{
+  font-family:var(--font-mono);font-size:8px;
+  letter-spacing:2px;color:var(--muted);
+  text-transform:uppercase;
+  padding:6px 0 8px;
+  border-bottom:1px solid rgba(0,200,255,0.06);
+  margin-bottom:8px;
+}
+.driver-item{margin-bottom:11px;}
+.driver-top{
+  display:flex;justify-content:space-between;
+  align-items:baseline;margin-bottom:4px;
+}
+.driver-name{
+  font-family:var(--font-ui);font-size:12px;font-weight:500;
+  color:var(--text);
+}
+.driver-num{
+  font-family:var(--font-mono);font-size:11px;
+  font-weight:700;min-width:36px;text-align:right;
+}
+
+/* Custom range input */
+input[type=range]{
+  -webkit-appearance:none;width:100%;height:2px;
+  background:rgba(0,200,255,0.12);border-radius:2px;
+  outline:none;cursor:pointer;
+}
+input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none;
+  width:12px;height:12px;border-radius:50%;
+  cursor:pointer;transition:transform 0.15s,box-shadow 0.15s;
+}
+input[type=range]:hover::-webkit-slider-thumb{
+  transform:scale(1.5);
+}
+/* color variants per gas */
+.sl-co2::-webkit-slider-thumb{background:var(--co2);box-shadow:0 0 8px var(--co2);}
+.sl-co2::-webkit-slider-runnable-track{background:linear-gradient(90deg,rgba(255,107,53,0.5) var(--pct,0%),rgba(0,200,255,0.1) var(--pct,0%));}
+.sl-ch4::-webkit-slider-thumb{background:var(--ch4);box-shadow:0 0 8px var(--ch4);}
+.sl-aero::-webkit-slider-thumb{background:var(--aero);box-shadow:0 0 8px var(--aero);}
+.sl-o3::-webkit-slider-thumb{background:var(--o3);box-shadow:0 0 8px var(--o3);}
+.sl-emit::-webkit-slider-thumb{background:#ff4466;box-shadow:0 0 8px #ff4466;}
+.sl-mit::-webkit-slider-thumb{background:var(--green);box-shadow:0 0 8px var(--green);}
+.sl-nat::-webkit-slider-thumb{background:#ffd700;box-shadow:0 0 8px rgba(255,215,0,0.8);}
+.sl-default::-webkit-slider-thumb{background:var(--glow);box-shadow:0 0 8px var(--glow);}
+
+.run-btn{
+  margin:8px 14px 4px;width:calc(100% - 28px);
+  padding:11px;border:1px solid var(--glow);
+  background:rgba(0,229,255,0.05);
+  color:var(--glow);font-family:var(--font-hd);
+  font-size:10px;letter-spacing:3px;
+  text-transform:uppercase;cursor:pointer;
+  border-radius:3px;transition:all 0.25s;
+  position:relative;overflow:hidden;
+}
+.run-btn::before{
+  content:'';position:absolute;inset:0;
+  background:linear-gradient(135deg,var(--glow),var(--green));
+  opacity:0;transition:opacity 0.25s;
+}
+.run-btn:hover::before{opacity:0.15;}
+.run-btn:hover{box-shadow:0 0 20px rgba(0,229,255,0.3);}
+.run-btn span{position:relative;z-index:1;}
+
+.scenario-select{
+  margin:0 14px 4px;width:calc(100% - 28px);
+  padding:8px 10px;
+  background:rgba(0,20,40,0.8);
+  border:1px solid var(--border);
+  color:var(--text);font-family:var(--font-mono);font-size:10px;
+  border-radius:3px;cursor:pointer;outline:none;
+}
+.scenario-select:focus{border-color:var(--glow);}
+
+/* ═══════════ EARTH CANVAS AREA ═══════════ */
+.earth-wrap{
+  position:relative;
+  width:min(500px,90vw);
+  height:min(500px,90vw);
+  display:flex;align-items:center;justify-content:center;
+}
+#earth-canvas{
+  position:absolute;
+  border-radius:50%;
+  z-index:5;
+}
+.orbit-ring{
+  position:absolute;
+  border:1px solid rgba(0,200,255,0.08);
+  border-radius:50%;
+  animation:orbit-spin linear infinite;
+}
+@keyframes orbit-spin{from{transform:rotateX(70deg) rotate(0deg)}to{transform:rotateX(70deg) rotate(360deg)}}
+
+/* ═══════════ GAS LEGEND ═══════════ */
+.gas-legend{
+  display:flex;gap:10px;flex-wrap:wrap;justify-content:center;
+  margin-top:16px;
+}
+.gas-pill{
+  display:flex;align-items:center;gap:5px;
+  padding:4px 10px;border-radius:20px;
+  font-family:var(--font-mono);font-size:9px;
+  border:1px solid;letter-spacing:1px;
+  cursor:default;
+}
+
+/* ═══════════ METRICS RIGHT PANEL ═══════════ */
+.metric-card{
+  margin:0 12px 8px;
+  padding:11px 12px;
+  background:rgba(0,20,50,0.5);
+  border:1px solid var(--border);
+  border-radius:4px;
+  border-left:3px solid var(--accent,var(--glow));
+  transition:background 0.3s;
+}
+.metric-card:hover{background:rgba(0,30,60,0.7);}
+.metric-card-top{
+  display:flex;align-items:center;
+  justify-content:space-between;margin-bottom:5px;
+}
+.metric-icon{font-size:14px;}
+.metric-name{
+  font-family:var(--font-mono);font-size:8.5px;
+  letter-spacing:1.5px;color:var(--muted);
+  text-transform:uppercase;flex:1;margin-left:7px;
+}
+.metric-val{
+  font-family:var(--font-hd);font-size:20px;font-weight:700;
+  color:#fff;transition:color 0.5s,transform 0.3s;
+  line-height:1;
+}
+.metric-unit{
+  font-family:var(--font-mono);font-size:9px;color:var(--muted);
+  margin-top:2px;
+}
+.metric-bar-track{
+  height:2px;background:rgba(255,255,255,0.06);
+  border-radius:2px;margin-top:7px;overflow:hidden;
+}
+.metric-bar-fill{
+  height:100%;border-radius:2px;
+  transition:width 0.8s cubic-bezier(.4,0,.2,1);
+}
+
+/* ═══════════ SECTION TABS ═══════════ */
+.tab-row{
+  display:flex;border-bottom:1px solid var(--border);
+  padding:0 12px;gap:2px;
+}
+.tab-btn{
+  font-family:var(--font-mono);font-size:9px;
+  letter-spacing:1.5px;color:var(--muted);
+  padding:8px 10px;cursor:pointer;
+  border-bottom:2px solid transparent;
+  text-transform:uppercase;transition:all 0.2s;
+}
+.tab-btn:hover{color:var(--text);}
+.tab-btn.on{color:var(--glow);border-bottom-color:var(--glow);}
+.tab-pane{display:none;padding:10px 12px;}
+.tab-pane.on{display:block;}
+
+/* ═══════════ RISK BARS ═══════════ */
+.risk-row{
+  display:flex;align-items:center;gap:8px;
+  margin-bottom:8px;
+}
+.risk-lbl{
+  font-family:var(--font-mono);font-size:9px;
+  color:var(--text);width:110px;flex-shrink:0;
+  letter-spacing:0.5px;
+}
+.risk-track{
+  flex:1;height:6px;background:rgba(255,255,255,0.06);
+  border-radius:3px;overflow:hidden;
+}
+.risk-fill{
+  height:100%;border-radius:3px;
+  transition:width 0.8s cubic-bezier(.4,0,.2,1);
+  position:relative;
+}
+.risk-fill::after{
+  content:'';position:absolute;right:0;top:0;bottom:0;width:3px;
+  background:rgba(255,255,255,0.6);border-radius:1px;
+}
+.risk-num{
+  font-family:var(--font-hd);font-size:11px;
+  width:30px;text-align:right;flex-shrink:0;
+}
+
+/* ═══════════ CIRCULATION PANEL ═══════════ */
+#circ-canvas{width:100%;height:180px;display:block;}
+
+/* ═══════════ GAS CONCENTRATION BARS ═══════════ */
+.gas-bar-row{
+  display:flex;align-items:center;gap:8px;margin-bottom:9px;
+}
+.gas-dot{
+  width:8px;height:8px;border-radius:50%;flex-shrink:0;
+}
+.gas-name{
+  font-family:var(--font-mono);font-size:9px;
+  width:32px;flex-shrink:0;letter-spacing:0.5px;
+}
+.gas-track{
+  flex:1;height:5px;background:rgba(255,255,255,0.06);
+  border-radius:3px;overflow:hidden;
+}
+.gas-bar{
+  height:100%;border-radius:3px;
+  transition:width 0.8s cubic-bezier(.4,0,.2,1);
+}
+.gas-val{
+  font-family:var(--font-mono);font-size:9px;
+  width:54px;text-align:right;flex-shrink:0;
+}
+
+/* ═══════════ FOOTER ═══════════ */
+footer{
+  grid-column:1/-1;
+  border-top:1px solid var(--border);
+  background:rgba(0,5,15,0.7);
+  backdrop-filter:blur(12px);
+  padding:10px 28px;
+  display:flex;align-items:center;justify-content:space-between;
+  font-family:var(--font-mono);font-size:9px;color:var(--muted);
+  letter-spacing:1px;
+}
+footer a{color:var(--glow);text-decoration:none;}
+
+/* ═══════════ ANIMATED NUMBER ═══════════ */
+.anim-num{
+  display:inline-block;
+  animation:numPop 0.4s ease both;
+}
+@keyframes numPop{
+  0%{transform:scale(1.3);opacity:0.5}
+  100%{transform:scale(1);opacity:1}
+}
+
+/* ═══════════ ATMOSPHERE GLOW RING ═══════════ */
+.atm-ring{
+  position:absolute;
+  border-radius:50%;
+  pointer-events:none;
+  z-index:6;
+}
+
+/* ═══════════ TOOLTIP ═══════════ */
+.tt{position:relative;}
+.tt:hover::after{
+  content:attr(data-tip);
+  position:absolute;bottom:120%;left:50%;transform:translateX(-50%);
+  background:rgba(0,20,40,0.95);border:1px solid var(--border);
+  color:var(--text);font-family:var(--font-mono);font-size:9px;
+  padding:5px 8px;border-radius:3px;white-space:nowrap;
+  z-index:100;letter-spacing:0.5px;pointer-events:none;
+}
+</style>
+</head>
+<body>
+
+<!-- SPACE BACKGROUND LAYERS -->
+<div id="space-bg"></div>
+<canvas id="nebula"></canvas>
+<canvas id="stars-canvas"></canvas>
+
+<div class="page-wrap">
+
+<!-- ══════════ HEADER ══════════ -->
+<header>
+  <div class="logo">
+    <div class="logo-icon">🌍</div>
+    <div class="logo-text">
+      <h1>EARTH CLIMATE SIM</h1>
+      <p>ATMOSPHERIC · CIRCULATION · THERMAL · RISK ENGINE v2.0</p>
+    </div>
+  </div>
+  <div class="header-stats">
+    <div class="hstat"><div class="hstat-val" id="hv-temp">—</div><div class="hstat-lbl">GLOBAL ΔT °C</div></div>
+    <div class="hstat"><div class="hstat-val" id="hv-co2">—</div><div class="hstat-lbl">EFF. CO₂ PPM</div></div>
+    <div class="hstat"><div class="hstat-val" id="hv-rf">—</div><div class="hstat-lbl">RF W/M²</div></div>
+    <div class="hstat"><div class="hstat-val" id="hv-stab">—</div><div class="hstat-lbl">STABILITY /10</div></div>
+  </div>
+  <div class="status-pill"><div class="status-dot"></div>LIVE SIM</div>
+</header>
+
+<!-- ══════════ LEFT PANEL ══════════ -->
+<aside class="left-panel">
+  <div class="sec-head"><div class="sec-dot"></div><span class="sec-title">Simulation Controls</span></div>
+
+  <div style="padding:10px 14px 4px;">
+    <select class="scenario-select" id="scenPicker" onchange="loadScenario(this.value)">
+      <option value="">— Quick Scenarios —</option>
+      <option value="preindustrial">🌿 Pre-Industrial (1850)</option>
+      <option value="current">🌎 Current (2024)</option>
+      <option value="bau">🔥 Business As Usual (2100)</option>
+      <option value="paris">📋 Paris 2°C Path</option>
+      <option value="netzero">⚡ Net-Zero 2050</option>
+      <option value="utopia">✅ Green Utopia (2100)</option>
+      <option value="volcano">🌋 Volcanic Super-Eruption</option>
+      <option value="solar">☀️ Solar Maximum + CO₂</option>
+    </select>
+  </div>
+
+  <!-- EMISSION DRIVERS -->
+  <div class="driver-group">
+    <div class="driver-group-label">⚡ Emission Drivers</div>
+    <div id="emitDrivers"></div>
+  </div>
+
+  <!-- MITIGATION -->
+  <div class="driver-group">
+    <div class="driver-group-label">🌱 Mitigation Levers</div>
+    <div id="mitDrivers"></div>
+  </div>
+
+  <!-- NATURAL -->
+  <div class="driver-group">
+    <div class="driver-group-label">🌋 Natural Forcings</div>
+    <div id="natDrivers"></div>
+  </div>
+
+  <!-- ATMOSPHERIC GAS CONCENTRATIONS -->
+  <div class="driver-group">
+    <div class="driver-group-label">🧪 Atmospheric Gases</div>
+    <div id="gasDrivers"></div>
+  </div>
+
+  <button class="run-btn" onclick="runSim()"><span>⟳ &nbsp;RUN SIMULATION</span></button>
+</aside>
+
+<!-- ══════════ CENTER PANEL ══════════ -->
+<section class="center-panel">
+  <!-- Earth -->
+  <div class="earth-wrap" id="earthWrap">
+    <!-- Orbit rings -->
+    <div class="orbit-ring" style="width:108%;height:108%;animation-duration:20s;"></div>
+    <div class="orbit-ring" style="width:118%;height:118%;animation-duration:35s;border-color:rgba(0,255,136,0.05);"></div>
+    <!-- Atmosphere layers (colored per gas) -->
+    <canvas class="atm-ring" id="atmCanvas" style="width:100%;height:100%;border-radius:50%;z-index:7;pointer-events:none;"></canvas>
+    <!-- Earth 3D -->
+    <canvas id="earth-canvas"></canvas>
+  </div>
+
+  <!-- Gas legend -->
+  <div class="gas-legend" id="gasLegend">
+    <div class="gas-pill" style="color:var(--co2);border-color:rgba(255,107,53,0.4);background:rgba(255,107,53,0.08)">
+      <div style="width:7px;height:7px;border-radius:50%;background:var(--co2)"></div>CO₂
+    </div>
+    <div class="gas-pill" style="color:var(--ch4);border-color:rgba(168,255,62,0.4);background:rgba(168,255,62,0.08)">
+      <div style="width:7px;height:7px;border-radius:50%;background:var(--ch4)"></div>CH₄
+    </div>
+    <div class="gas-pill" style="color:var(--aero);border-color:rgba(56,190,255,0.4);background:rgba(56,190,255,0.08)">
+      <div style="width:7px;height:7px;border-radius:50%;background:var(--aero)"></div>AEROSOLS
+    </div>
+    <div class="gas-pill" style="color:var(--o3);border-color:rgba(204,68,255,0.4);background:rgba(204,68,255,0.08)">
+      <div style="width:7px;height:7px;border-radius:50%;background:var(--o3)"></div>O₃
+    </div>
+    <div class="gas-pill" style="color:var(--h2o);border-color:rgba(68,221,255,0.4);background:rgba(68,221,255,0.08)">
+      <div style="width:7px;height:7px;border-radius:50%;background:var(--h2o)"></div>H₂O
+    </div>
+    <div class="gas-pill" style="color:var(--n2o);border-color:rgba(255,221,0,0.4);background:rgba(255,221,0,0.08)">
+      <div style="width:7px;height:7px;border-radius:50%;background:var(--n2o)"></div>N₂O
+    </div>
+  </div>
+
+  <!-- GAS CONCENTRATION LIVE BARS -->
+  <div style="width:100%;max-width:440px;margin-top:16px;padding:12px 16px;background:rgba(0,10,25,0.6);border:1px solid var(--border);border-radius:4px;">
+    <div style="font-family:var(--font-mono);font-size:8px;letter-spacing:2px;color:var(--muted);margin-bottom:10px;">ATMOSPHERIC COMPOSITION</div>
+    <div id="gasBars"></div>
+  </div>
+</section>
+
+<!-- ══════════ RIGHT PANEL ══════════ -->
+<aside class="right-panel">
+  <div class="sec-head"><div class="sec-dot" style="background:var(--green);box-shadow:0 0 6px var(--green)"></div><span class="sec-title">Simulation Outputs</span></div>
+
+  <!-- KEY METRICS -->
+  <div style="padding:10px 0 0 0;" id="metricsArea"></div>
+
+  <!-- TABS for charts -->
+  <div style="margin:8px 0 0 0;">
+    <div class="tab-row">
+      <div class="tab-btn on" onclick="showTab('risk')">Risk</div>
+      <div class="tab-btn" onclick="showTab('circ')">Circulation</div>
+      <div class="tab-btn" onclick="showTab('temp')">Temp</div>
+    </div>
+    <div class="tab-pane on" id="tab-risk">
+      <div id="riskBars"></div>
+    </div>
+    <div class="tab-pane" id="tab-circ">
+      <canvas id="circ-canvas"></canvas>
+      <div id="circStats" style="margin-top:10px;"></div>
+    </div>
+    <div class="tab-pane" id="tab-temp">
+      <canvas id="tempChart" height="160" style="width:100%;display:block;"></canvas>
+    </div>
+  </div>
+</aside>
+
+<!-- FOOTER -->
+<footer>
+  <span>Earth System Simulation Engine · IPCC AR6 Physics · ECS 3.0 °C/doubling · Clausius-Clapeyron Moisture</span>
+  <a href="https://github.com/YOUR_USERNAME/earth-climate-sim" target="_blank">GitHub ↗</a>
+</footer>
+
+</div><!-- end page-wrap -->
+
+<script>
+// ╔═══════════════════════════════════════════════════════════╗
+// ║  SPACE BACKGROUND — STARS + NEBULA                       ║
+// ╚═══════════════════════════════════════════════════════════╝
+(function(){
+  // STARS
+  const sc = document.getElementById('stars-canvas');
+  const sx = sc.getContext('2d');
+  let stars=[];
+  function resizeS(){
+    sc.width=window.innerWidth; sc.height=window.innerHeight;
+    stars=[];
+    for(let i=0;i<350;i++) stars.push({
+      x:Math.random()*sc.width, y:Math.random()*sc.height,
+      r:Math.random()*1.6+0.2,
+      o:Math.random()*0.8+0.1,
+      s:Math.random()*0.4+0.05,
+      c:['255,255,255','200,220,255','255,240,200','180,210,255'][Math.floor(Math.random()*4)]
+    });
+  }
+  function drawS(){
+    sx.clearRect(0,0,sc.width,sc.height);
+    const t=Date.now()/1000;
+    stars.forEach(s=>{
+      const o=s.o+Math.sin(t*s.s)*0.25;
+      sx.beginPath();sx.arc(s.x,s.y,s.r,0,Math.PI*2);
+      sx.fillStyle=`rgba(${s.c},${Math.max(0.05,Math.min(0.9,o))})`;
+      sx.fill();
+    });
+    requestAnimationFrame(drawS);
+  }
+  window.addEventListener('resize',resizeS);
+  resizeS(); drawS();
+
+  // NEBULA
+  const nc=document.getElementById('nebula');
+  const nx=nc.getContext('2d');
+  function resizeN(){nc.width=window.innerWidth;nc.height=window.innerHeight;drawN();}
+  function drawN(){
+    nx.clearRect(0,0,nc.width,nc.height);
+    // Deep blue nebula left
+    let g=nx.createRadialGradient(nc.width*0.1,nc.height*0.3,0,nc.width*0.1,nc.height*0.3,nc.width*0.5);
+    g.addColorStop(0,'rgba(0,20,80,0.35)'); g.addColorStop(1,'transparent');
+    nx.fillStyle=g; nx.fillRect(0,0,nc.width,nc.height);
+    // Teal nebula right
+    g=nx.createRadialGradient(nc.width*0.9,nc.height*0.6,0,nc.width*0.9,nc.height*0.6,nc.width*0.45);
+    g.addColorStop(0,'rgba(0,40,50,0.3)'); g.addColorStop(1,'transparent');
+    nx.fillStyle=g; nx.fillRect(0,0,nc.width,nc.height);
+    // Purple nebula center-top
+    g=nx.createRadialGradient(nc.width*0.5,nc.height*0.1,0,nc.width*0.5,nc.height*0.1,nc.width*0.3);
+    g.addColorStop(0,'rgba(30,0,60,0.2)'); g.addColorStop(1,'transparent');
+    nx.fillStyle=g; nx.fillRect(0,0,nc.width,nc.height);
+  }
+  window.addEventListener('resize',resizeN);
+  resizeN();
+})();
+
+// ╔═══════════════════════════════════════════════════════════╗
+// ║  EARTH 3D CANVAS RENDERER                                ║
+// ╚═══════════════════════════════════════════════════════════╝
+const earthCanvas = document.getElementById('earth-canvas');
+const eCtx = earthCanvas.getContext('2d');
+let earthRot = 0;
+let simState = { heat:0.3, co2:0.5, ch4:0.3, aero:0.1, jetInst:0.3, stability:0.7 };
+
+function resizeEarth(){
+  const wrap = document.getElementById('earthWrap');
+  const sz = Math.min(wrap.offsetWidth, wrap.offsetHeight, 460);
+  earthCanvas.width = sz; earthCanvas.height = sz;
+  const ac = document.getElementById('atmCanvas');
+  ac.width = sz; ac.height = sz;
+}
+
+function drawEarth(){
+  const W=earthCanvas.width, H=earthCanvas.height;
+  if(!W||!H){requestAnimationFrame(drawEarth);return;}
+  const cx=W/2, cy=H/2, R=W*0.44;
+  eCtx.clearRect(0,0,W,H);
+
+  const s=simState;
+
+  // ── DEEP SPACE SHADOW behind Earth ──
+  const shadow=eCtx.createRadialGradient(cx+R*0.6,cy+R*0.3,0,cx,cy,R*1.4);
+  shadow.addColorStop(0,'transparent');
+  shadow.addColorStop(0.6,'rgba(0,0,0,0.3)');
+  shadow.addColorStop(1,'rgba(0,0,5,0.8)');
+  eCtx.beginPath();eCtx.arc(cx,cy,R*1.5,0,Math.PI*2);
+  eCtx.fillStyle=shadow;eCtx.fill();
+
+  // ── CLIP to sphere ──
+  eCtx.save();
+  eCtx.beginPath();eCtx.arc(cx,cy,R,0,Math.PI*2);eCtx.clip();
+
+  // ── OCEAN BASE ──
+  const oceanHeat=Math.max(0,Math.min(1,s.heat));
+  // interpolate: cool blue → warm teal → red hot
+  const oceanH = 220-oceanHeat*160;
+  const oceanS = 70+oceanHeat*20;
+  const oceanL = 18+oceanHeat*12;
+  const ocean=eCtx.createRadialGradient(cx-R*0.2,cy-R*0.25,0,cx,cy,R);
+  ocean.addColorStop(0,`hsl(${oceanH+20},${oceanS}%,${oceanL+8}%)`);
+  ocean.addColorStop(0.5,`hsl(${oceanH},${oceanS}%,${oceanL}%)`);
+  ocean.addColorStop(1,'#010812');
+  eCtx.fillStyle=ocean;eCtx.fillRect(0,0,W,H);
+
+  // ── CONTINENTS (procedural curved shapes) ──
+  eCtx.globalAlpha=0.85;
+  const continents=[
+    // North America
+    {pts:[[cx-R*0.32,cy-R*0.05],[cx-R*0.18,cy-R*0.38],[cx+R*0.0,cy-R*0.35],[cx+R*0.05,cy-R*0.10],[cx-R*0.08,cy+R*0.05]]},
+    // Europe+Africa
+    {pts:[[cx+R*0.15,cy-R*0.35],[cx+R*0.28,cy-R*0.28],[cx+R*0.30,cy+R*0.05],[cx+R*0.22,cy+R*0.40],[cx+R*0.08,cy+R*0.38],[cx+R*0.10,cy-R*0.05]]},
+    // Asia
+    {pts:[[cx+R*0.30,cy-R*0.38],[cx+R*0.55,cy-R*0.30],[cx+R*0.58,cy-R*0.05],[cx+R*0.42,cy+R*0.10],[cx+R*0.28,cy+R*0.02]]},
+    // South America
+    {pts:[[cx-R*0.15,cy+R*0.05],[cx-R*0.05,cy+R*0.02],[cx-R*0.03,cy+R*0.35],[cx-R*0.18,cy+R*0.45]]},
+    // Australia
+    {pts:[[cx+R*0.42,cy+R*0.18],[cx+R*0.56,cy+R*0.16],[cx+R*0.58,cy+R*0.32],[cx+R*0.44,cy+R*0.33]]},
+  ];
+
+  // Continent color shifts with deforestation / heat
+  const grassG = Math.round(120 - s.heat*30);
+  const grassColor = `rgba(30,${grassG},20,0.9)`;
+  const desertColor= `rgba(${140+Math.round(s.heat*60)},${110-Math.round(s.heat*20)},40,0.85)`;
+
+  continents.forEach((cont,ci)=>{
+    const isDesert=(ci===4||s.heat>0.6);
+    const col=isDesert?desertColor:grassColor;
+    eCtx.beginPath();
+    eCtx.moveTo(cont.pts[0][0],cont.pts[0][1]);
+    cont.pts.forEach((p,i)=>{
+      const np=cont.pts[(i+1)%cont.pts.length];
+      const mx=(p[0]+np[0])/2, my=(p[1]+np[1])/2;
+      eCtx.quadraticCurveTo(p[0],p[1],mx,my);
+    });
+    eCtx.closePath();
+    eCtx.fillStyle=col;eCtx.fill();
+  });
+  eCtx.globalAlpha=1;
+
+  // ── POLAR ICE CAPS ──
+  const iceAlpha=0.6+Math.max(0,(0.5-s.heat))*0.4;
+  // North
+  const northIce=eCtx.createRadialGradient(cx,cy-R,0,cx,cy-R*0.7,R*0.4);
+  northIce.addColorStop(0,`rgba(220,240,255,${iceAlpha})`);
+  northIce.addColorStop(0.5,`rgba(180,220,255,${iceAlpha*0.5})`);
+  northIce.addColorStop(1,'transparent');
+  eCtx.fillStyle=northIce;eCtx.fillRect(0,0,W,H);
+  // South
+  const southIce=eCtx.createRadialGradient(cx,cy+R,0,cx,cy+R*0.7,R*0.35);
+  southIce.addColorStop(0,`rgba(220,240,255,${iceAlpha})`);
+  southIce.addColorStop(0.5,`rgba(180,220,255,${iceAlpha*0.4})`);
+  southIce.addColorStop(1,'transparent');
+  eCtx.fillStyle=southIce;eCtx.fillRect(0,0,W,H);
+
+  // ── CLOUD / STORM SYSTEMS (animated) ──
+  const t=Date.now()/1000;
+  const cloudAlpha=0.55+s.heat*0.2;
+  const cloudPositions=[
+    {x:cx-R*0.3+Math.sin(t*0.3)*R*0.08,y:cy-R*0.1,r:R*0.22},
+    {x:cx+R*0.1+Math.cos(t*0.2)*R*0.06,y:cy+R*0.3,r:R*0.18},
+    {x:cx-R*0.55+Math.sin(t*0.25)*R*0.05,y:cy+R*0.1,r:R*0.16},
+    {x:cx+R*0.35+Math.cos(t*0.35)*R*0.07,y:cy-R*0.4,r:R*0.14},
+    {x:cx+R*0.5+Math.sin(t*0.15)*R*0.04,y:cy+R*0.0,r:R*0.12},
+  ];
+  cloudPositions.forEach(c=>{
+    const cg=eCtx.createRadialGradient(c.x,c.y,0,c.x,c.y,c.r);
+    cg.addColorStop(0,`rgba(255,255,255,${cloudAlpha})`);
+    cg.addColorStop(0.5,`rgba(220,235,255,${cloudAlpha*0.4})`);
+    cg.addColorStop(1,'transparent');
+    eCtx.fillStyle=cg;eCtx.fillRect(0,0,W,H);
+  });
+
+  // ── STORM SPIRAL (when instability is high) ──
+  if(s.jetInst>0.4){
+    const spiralAlpha=Math.min(0.7,(s.jetInst-0.4)*1.2);
+    const sa=earthRot*0.02;
+    eCtx.save();
+    eCtx.translate(cx-R*0.2,cy+R*0.1);
+    eCtx.rotate(sa);
+    for(let arm=0;arm<3;arm++){
+      eCtx.beginPath();
+      for(let a=0;a<Math.PI*4;a+=0.05){
+        const r2=(a/(Math.PI*4))*R*0.25;
+        const px=Math.cos(a+arm*Math.PI*2/3)*r2;
+        const py=Math.sin(a+arm*Math.PI*2/3)*r2*0.6;
+        if(a===0)eCtx.moveTo(px,py);else eCtx.lineTo(px,py);
+      }
+      eCtx.strokeStyle=`rgba(180,200,255,${spiralAlpha})`;
+      eCtx.lineWidth=1.5;eCtx.stroke();
+    }
+    eCtx.restore();
+  }
+
+  // ── ATMOSPHERIC CIRCULATION BANDS ──
+  const hadleyAlpha=0.08+s.heat*0.06;
+  [[cy,R*0.22,'rgba(255,120,40'],[cy-R*0.55,R*0.12,'rgba(255,200,100'],[cy+R*0.55,R*0.12,'rgba(255,200,100']].forEach(([y,r,col])=>{
+    const bg2=eCtx.createRadialGradient(cx,y,0,cx,y,r*2);
+    bg2.addColorStop(0,`${col},${hadleyAlpha})`);bg2.addColorStop(1,'transparent');
+    eCtx.fillStyle=bg2;eCtx.fillRect(0,0,W,H);
+  });
+
+  // ── NIGHT SIDE TERMINATOR ──
+  const term=eCtx.createLinearGradient(cx+R*0.3,0,cx+R,0);
+  term.addColorStop(0,'transparent');
+  term.addColorStop(0.4,'rgba(0,0,15,0.4)');
+  term.addColorStop(1,'rgba(0,0,5,0.85)');
+  eCtx.fillStyle=term;eCtx.fillRect(0,0,W,H);
+
+  // ── SPECULAR HIGHLIGHT ──
+  const spec=eCtx.createRadialGradient(cx-R*0.3,cy-R*0.32,0,cx-R*0.1,cy-R*0.1,R*0.8);
+  spec.addColorStop(0,'rgba(255,255,255,0.18)');
+  spec.addColorStop(0.3,'rgba(200,230,255,0.06)');
+  spec.addColorStop(1,'transparent');
+  eCtx.fillStyle=spec;eCtx.fillRect(0,0,W,H);
+
+  eCtx.restore(); // end sphere clip
+
+  // ── OUTER ATMOSPHERE GLOW ──
+  const atmHeat=Math.min(1,s.heat);
+  const glowR=Math.round(40+atmHeat*160);
+  const glowG=Math.round(160-atmHeat*140);
+  const glowB=Math.round(255-atmHeat*100);
+  const atm=eCtx.createRadialGradient(cx,cy,R*0.95,cx,cy,R*1.25);
+  atm.addColorStop(0,`rgba(${glowR},${glowG},${glowB},${0.12+atmHeat*0.14})`);
+  atm.addColorStop(0.5,`rgba(${glowR},${glowG},${glowB},0.04)`);
+  atm.addColorStop(1,'transparent');
+  eCtx.beginPath();eCtx.arc(cx,cy,R*1.25,0,Math.PI*2);
+  eCtx.fillStyle=atm;eCtx.fill();
+
+  earthRot++;
+  requestAnimationFrame(drawEarth);
+}
+
+// ── Atmosphere Gas Layer Canvas ──
+function drawAtmosphere(gases){
+  const ac=document.getElementById('atmCanvas');
+  const ax=ac.getContext('2d');
+  const W=ac.width, H=ac.height;
+  if(!W)return;
+  const cx=W/2,cy=H/2,R=W*0.44;
+  ax.clearRect(0,0,W,H);
+
+  // Draw colored gas rings from outermost to innermost
+  const gasLayers=[
+    {name:'N₂O', radius:1.22, color:'255,221,0',    alpha:0.06+gases.n2o*0.10,  width:0.04},
+    {name:'O₃',  radius:1.17, color:'204,68,255',   alpha:0.07+gases.o3*0.12,   width:0.04},
+    {name:'AERO',radius:1.12, color:'56,190,255',   alpha:0.06+gases.aero*0.15, width:0.04},
+    {name:'H₂O', radius:1.08, color:'68,221,255',   alpha:0.08+gases.h2o*0.12,  width:0.035},
+    {name:'CH₄', radius:1.045,color:'168,255,62',   alpha:0.07+gases.ch4*0.14,  width:0.03},
+    {name:'CO₂', radius:1.015,color:'255,107,53',   alpha:0.10+gases.co2*0.20,  width:0.03},
+  ];
+
+  gasLayers.forEach(l=>{
+    const r1=R*l.radius, r2=R*(l.radius-l.width);
+    const g=ax.createRadialGradient(cx,cy,r2,cx,cy,r1);
+    g.addColorStop(0,`rgba(${l.color},${l.alpha})`);
+    g.addColorStop(0.4,`rgba(${l.color},${l.alpha*0.6})`);
+    g.addColorStop(1,'transparent');
+    ax.beginPath();ax.arc(cx,cy,r1,0,Math.PI*2);
+    ax.fillStyle=g;ax.fill();
+  });
+}
+
+// ╔═══════════════════════════════════════════════════════════╗
+// ║  DRIVER DEFINITIONS                                       ║
+// ╚═══════════════════════════════════════════════════════════╝
+const EMIT_DRIVERS=[
+  {id:'fossil',  name:'Fossil Fuel Use',       def:50, cls:'sl-emit'},
+  {id:'defor',   name:'Deforestation Rate',     def:40, cls:'sl-emit'},
+  {id:'industry',name:'Industrial Emissions',   def:45, cls:'sl-emit'},
+  {id:'transport',name:'Transport Emissions',  def:50, cls:'sl-emit'},
+  {id:'agri',    name:'Agriculture CH₄',        def:35, cls:'sl-ch4'},
+  {id:'urban',   name:'Urbanization',           def:60, cls:'sl-emit'},
+];
+const MIT_DRIVERS=[
+  {id:'renew',  name:'Renewable Adoption',   def:25, cls:'sl-mit'},
+  {id:'ccs',    name:'Carbon Capture (CCS)',  def:10, cls:'sl-mit'},
+];
+const NAT_DRIVERS=[
+  {id:'solar',   name:'Solar Radiation Δ W/m²', def:0,   min:-5, max:5,   step:0.1, cls:'sl-nat'},
+  {id:'volcano', name:'Volcanic Activity',       def:0,   min:0,  max:100, step:1,   cls:'sl-nat'},
+  {id:'ocean',   name:'Ocean Heat Uptake',        def:50,  min:0,  max:100, step:1,   cls:'sl-nat'},
+  {id:'ice',     name:'Ice Cover',                def:50,  min:0,  max:100, step:1,   cls:'sl-nat'},
+];
+const GAS_DRIVERS=[
+  {id:'co2_ppm', name:'CO₂',  unit:'ppm', def:421,  min:280,  max:1200, step:1,    cls:'sl-co2', color:'var(--co2)'},
+  {id:'ch4_ppb', name:'CH₄',  unit:'ppb', def:1900, min:700,  max:6000, step:10,   cls:'sl-ch4', color:'var(--ch4)'},
+  {id:'aerosol', name:'AOD',  unit:'',    def:0.10, min:0.00, max:2.00, step:0.01, cls:'sl-aero',color:'var(--aero)'},
+  {id:'o3',      name:'O₃',   unit:'DU',  def:300,  min:100,  max:500,  step:1,    cls:'sl-o3',  color:'var(--o3)'},
+];
+
+function makeDriverRow(d, container){
+  const min=d.min!==undefined?d.min:0;
+  const max=d.max!==undefined?d.max:100;
+  const step=d.step!==undefined?d.step:1;
+  const decimals=step<1?2:0;
+  const numColor=d.color||'var(--glow)';
+  container.insertAdjacentHTML('beforeend',`
+    <div class="driver-item">
+      <div class="driver-top">
+        <span class="driver-name tt" data-tip="${d.name}">${d.name}</span>
+        <span class="driver-num" id="dv_${d.id}" style="color:${numColor}">${parseFloat(d.def).toFixed(decimals)}</span>
+      </div>
+      <input type="range" class="${d.cls}" id="sl_${d.id}"
+        min="${min}" max="${max}" step="${step}" value="${d.def}"
+        oninput="onSlider('${d.id}',this.value,${decimals},'${numColor}')">
+    </div>
+  `);
+}
+
+function onSlider(id,val,dec,color){
+  document.getElementById('dv_'+id).textContent=parseFloat(val).toFixed(dec);
+  runSim();
+}
+
+function getV(id){return parseFloat(document.getElementById('sl_'+id).value);}
+function setV(id,v){
+  const el=document.getElementById('sl_'+id);
+  const dv=document.getElementById('dv_'+id);
+  if(!el)return;
+  el.value=v;
+  const step=parseFloat(el.step)||1;
+  dv.textContent=parseFloat(v).toFixed(step<1?2:0);
+}
+
+// Build driver UIs
+EMIT_DRIVERS.forEach(d=>makeDriverRow(d,document.getElementById('emitDrivers')));
+MIT_DRIVERS.forEach(d=>makeDriverRow(d,document.getElementById('mitDrivers')));
+NAT_DRIVERS.forEach(d=>makeDriverRow(d,document.getElementById('natDrivers')));
+GAS_DRIVERS.forEach(d=>makeDriverRow(d,document.getElementById('gasDrivers')));
+
+// ╔═══════════════════════════════════════════════════════════╗
+// ║  SCENARIOS                                                ║
+// ╚═══════════════════════════════════════════════════════════╝
+const SCEN={
+  preindustrial:{fossil:2,defor:10,industry:3,transport:2,agri:15,urban:5,renew:0,ccs:0,solar:0,volcano:0,ocean:50,ice:65,co2_ppm:280,ch4_ppb:722,aerosol:0.05,o3:310},
+  current:{fossil:75,defor:55,industry:65,transport:65,agri:50,urban:70,renew:30,ccs:8,solar:0,volcano:0,ocean:50,ice:50,co2_ppm:421,ch4_ppb:1900,aerosol:0.12,o3:290},
+  bau:{fossil:90,defor:80,industry:85,transport:80,agri:75,urban:90,renew:15,ccs:5,solar:0,volcano:0,ocean:50,ice:25,co2_ppm:850,ch4_ppb:4500,aerosol:0.15,o3:260},
+  paris:{fossil:40,defor:25,industry:35,transport:35,agri:30,urban:55,renew:65,ccs:30,solar:0,volcano:0,ocean:55,ice:48,co2_ppm:480,ch4_ppb:2200,aerosol:0.10,o3:285},
+  netzero:{fossil:15,defor:10,industry:15,transport:12,agri:20,urban:60,renew:85,ccs:60,solar:0,volcano:0,ocean:52,ice:50,co2_ppm:430,ch4_ppb:1950,aerosol:0.09,o3:295},
+  utopia:{fossil:2,defor:5,industry:5,transport:3,agri:10,urban:45,renew:98,ccs:90,solar:0,volcano:0,ocean:50,ice:55,co2_ppm:340,ch4_ppb:1600,aerosol:0.07,o3:305},
+  volcano:{fossil:50,defor:40,industry:45,transport:50,agri:35,urban:60,renew:25,ccs:10,solar:-2,volcano:100,ocean:50,ice:55,co2_ppm:421,ch4_ppb:1900,aerosol:1.00,o3:270},
+  solar:{fossil:80,defor:60,industry:70,transport:70,agri:55,urban:75,renew:20,ccs:5,solar:2.5,volcano:0,ocean:45,ice:30,co2_ppm:700,ch4_ppb:3500,aerosol:0.08,o3:265},
+};
+function loadScenario(n){
+  if(!n)return;
+  const d=SCEN[n];
+  Object.keys(d).forEach(k=>setV(k,d[k]));
+  runSim();
+}
+
+// ╔═══════════════════════════════════════════════════════════╗
+// ║  PHYSICS ENGINE                                           ║
+// ╚═══════════════════════════════════════════════════════════╝
+function runSim(){
+  const h={fossil:getV('fossil'),defor:getV('defor'),industry:getV('industry'),transport:getV('transport'),agri:getV('agri'),urban:getV('urban'),renew:getV('renew'),ccs:getV('ccs')};
+  const nat={solar:getV('solar'),volcano:getV('volcano'),ocean:getV('ocean'),ice:getV('ice')};
+  const atm={co2:getV('co2_ppm'),ch4:getV('ch4_ppb'),aero:getV('aerosol'),o3:getV('o3')};
+
+  // ── Effective GHG ──
+  const ef=(h.fossil*0.30+h.defor*0.15+h.industry*0.20+h.transport*0.15+h.agri*0.10+h.urban*0.05)/100;
+  const mf=(h.renew*0.60+h.ccs*0.40)/100;
+  const net=Math.max(0,Math.min(1,ef-mf*0.5));
+  const effCO2=atm.co2+net*800;
+  const effCH4=atm.ch4+(h.agri*0.5+h.fossil*0.3+h.defor*0.2)/100*3000;
+
+  // ── Radiative Forcing ──
+  const rfCO2=5.35*Math.log(effCO2/280);
+  const rfCH4=0.036*(Math.sqrt(effCH4)-Math.sqrt(722));
+  const rfAero=-1.5*atm.aero;
+  const rfSolar=(nat.solar/4)*(1-0.30);
+  const rfVolc=-0.03*nat.volcano;
+  const rfAlbedo=-((nat.ice-50)*0.001/4)*1361;
+  const RF=rfCO2+rfCH4+rfAero+rfSolar+rfVolc+rfAlbedo;
+
+  // ── Temperature ──
+  const lambda=3.0/(5.35*Math.log(2));
+  const oceanDamp=1-(nat.ocean/100)*0.30;
+  const dtG=lambda*RF*oceanDamp;
+  const polAmp=2.5+Math.max(0,Math.min(1,dtG*0.15));
+  const dtA=dtG*polAmp;
+  const dtT=dtG*0.75;
+
+  // ── Circulation ──
+  const hadleyExp=dtG*0.5+(h.fossil-h.renew)/100*1.5;
+  const eqPole=Math.max(0,Math.min(1,(dtA-dtG)/30));
+  const jetInst=Math.max(0,Math.min(10,eqPole*8+dtG*0.4+h.defor/100*1.5));
+  const itczShift=dtG*0.3+(h.urban-50)/100*0.5;
+  const tradeWind=Math.max(-40,Math.min(10,-(hadleyExp*4+dtG*1.5)));
+  const ferrelDis=Math.max(0,Math.min(1,eqPole*0.7));
+  const polarDis=Math.max(0,Math.min(1,dtA/10*0.8));
+  const stability=Math.max(0,Math.min(10,10-(ferrelDis*3+polarDis*2.5+jetInst*0.3+hadleyExp*0.15)));
+
+  // ── Risk ──
+  const moisture=0.07*dtG;
+  const stormRisk=Math.max(0,Math.min(10,dtG*1.2+moisture*15+jetInst*0.3+h.fossil/100*1.5));
+  const monsoon=moisture*100*0.8-hadleyExp*3-h.defor*0.15;
+  const drought=Math.max(0,Math.min(10,dtG*0.8+hadleyExp*0.6+h.defor/100*2));
+  const flood=Math.max(0,Math.min(10,moisture*20+jetInst*0.5+dtG*0.6));
+
+  const R2={dtG,dtA,dtT,polAmp,RF,effCO2,hadleyExp,jetInst,itczShift,tradeWind,stability,stormRisk,monsoon,drought,flood,rfCO2,rfCH4,rfAero,rfSolar};
+
+  // Update visuals
+  updateHeaderStats(R2);
+  updateMetrics(R2);
+  updateRiskBars(R2);
+  drawCirc({hadleyExp,jetInst,itczShift,tradeWind,stability});
+  drawTempChart({dtG,dtA,dtT});
+  updateGasBars({effCO2,effCH4,aero:atm.aero,o3:atm.o3});
+
+  // Update Earth animation state
+  const normHeat=Math.max(0,Math.min(1,(dtG+5)/20));
+  simState.heat=normHeat;
+  simState.jetInst=jetInst/10;
+  simState.stability=stability/10;
+  simState.co2=(effCO2-280)/1000;
+  simState.ch4=(effCH4-700)/5000;
+  simState.aero=atm.aero/2;
+
+  // Update atmosphere gas rings
+  drawAtmosphere({
+    co2:Math.min(1,(effCO2-280)/900),
+    ch4:Math.min(1,(effCH4-700)/5000),
+    aero:Math.min(1,atm.aero/2),
+    o3:Math.min(1,(500-atm.o3)/400),
+    h2o:Math.min(1,normHeat*0.8+0.1),
+    n2o:Math.min(1,net*0.7+0.1),
+  });
+}
+
+// ╔═══════════════════════════════════════════════════════════╗
+// ║  UI UPDATERS                                              ║
+// ╚═══════════════════════════════════════════════════════════╝
+function setHV(id,val,decimals=2){
+  const el=document.getElementById(id);
+  if(!el)return;
+  el.innerHTML=`<span class="anim-num">${val>0?'+':''}${val.toFixed(decimals)}</span>`;
+}
+function updateHeaderStats(r){
+  const el=document.getElementById('hv-temp');
+  if(el){
+    const v=r.dtG.toFixed(2);
+    el.innerHTML=`<span class="anim-num" style="color:${r.dtG>3?'#ff2244':r.dtG>1.5?'#ff9900':r.dtG>0?'#ffee44':'#00ff88'}">${r.dtG>0?'+':''}${v}</span>`;
+  }
+  document.getElementById('hv-co2').innerHTML=`<span class="anim-num">${r.effCO2.toFixed(0)}</span>`;
+  document.getElementById('hv-rf').innerHTML=`<span class="anim-num" style="color:${r.RF>5?'#ff4466':r.RF>2?'#ff9900':'#00ff88'}">${r.RF>0?'+':''}${r.RF.toFixed(2)}</span>`;
+  document.getElementById('hv-stab').innerHTML=`<span class="anim-num" style="color:${r.stability<4?'#ff4466':r.stability<7?'#ff9900':'#00ff88'}">${r.stability.toFixed(1)}</span>`;
+}
+
+// ── Metric cards definition ──
+const METRIC_DEFS=[
+  {key:'dtG',    icon:'🌡', name:'Global ΔT',       unit:'°C',    acc:'var(--red)',   fmt:v=>fmtSign(v,2), bar:v=>(v+5)/20, barCol:'#ff4466'},
+  {key:'dtA',    icon:'🧊', name:'Arctic ΔT',        unit:'°C',    acc:'#00c8ff',     fmt:v=>fmtSign(v,2), bar:v=>(v+10)/50,barCol:'#00c8ff'},
+  {key:'RF',     icon:'📡', name:'Rad. Forcing',      unit:'W/m²',  acc:'var(--warn)', fmt:v=>fmtSign(v,2), bar:v=>(v+5)/30, barCol:'#f0a020'},
+  {key:'polAmp', icon:'🌐', name:'Polar Amp.',        unit:'×',     acc:'#60d0ff',     fmt:v=>v.toFixed(2), bar:v=>(v-2)/2,  barCol:'#60d0ff'},
+  {key:'jetInst',icon:'💨', name:'Jet Instability',  unit:'/10',   acc:'#a070ff',     fmt:v=>v.toFixed(1), bar:v=>v/10,     barCol:'#a070ff'},
+  {key:'stability',icon:'🔄',name:'Circ. Stability', unit:'/10',   acc:'var(--green)',fmt:v=>v.toFixed(1), bar:v=>v/10,     barCol:'#00ff88'},
+  {key:'stormRisk',icon:'⛈',name:'Storm Risk',       unit:'/10',   acc:'#ff6b35',     fmt:v=>v.toFixed(1), bar:v=>v/10,     barCol:'#ff6b35'},
+  {key:'hadleyExp',icon:'🌀',name:'Hadley Exp.',      unit:'°',     acc:'#ffd060',     fmt:v=>fmtSign(v,2), bar:v=>(v+5)/20, barCol:'#ffd060'},
+];
+function fmtSign(v,d){return (v>0?'+':'')+v.toFixed(d);}
+
+function initMetrics(){
+  const area=document.getElementById('metricsArea');
+  area.innerHTML=METRIC_DEFS.map(m=>`
+    <div class="metric-card" style="--accent:${m.acc}">
+      <div class="metric-card-top">
+        <span class="metric-icon">${m.icon}</span>
+        <span class="metric-name">${m.name}</span>
+        <div>
+          <div class="metric-val" id="mv_${m.key}">—</div>
+          <div class="metric-unit">${m.unit}</div>
+        </div>
+      </div>
+      <div class="metric-bar-track">
+        <div class="metric-bar-fill" id="mb_${m.key}" style="width:0%;background:${m.barCol}"></div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function updateMetrics(r){
+  METRIC_DEFS.forEach(m=>{
+    const v=r[m.key];
+    if(v===undefined)return;
+    const el=document.getElementById('mv_'+m.key);
+    const bel=document.getElementById('mb_'+m.key);
+    if(el) el.innerHTML=`<span class="anim-num">${m.fmt(v)}</span>`;
+    if(bel) bel.style.width=Math.max(0,Math.min(100,m.bar(v)*100))+'%';
+  });
+}
+
+// ── Risk Bars ──
+const RISK_DEFS=[
+  {key:'stormRisk', lbl:'Storm Risk',    max:10, col:'#ff6b35'},
+  {key:'drought',   lbl:'Drought Risk',  max:10, col:'#f0a020'},
+  {key:'flood',     lbl:'Flood Risk',    max:10, col:'#4090ff'},
+  {key:'jetInst',   lbl:'Jet Stream',    max:10, col:'#a070ff'},
+  {key:'stability', lbl:'Stability',     max:10, col:'#00ff88', inv:true},
+];
+function initRiskBars(){
+  document.getElementById('riskBars').innerHTML=RISK_DEFS.map(b=>`
+    <div class="risk-row">
+      <div class="risk-lbl">${b.lbl}</div>
+      <div class="risk-track"><div class="risk-fill" id="rf_${b.key}" style="background:${b.col};width:0%"></div></div>
+      <div class="risk-num" id="rn_${b.key}" style="color:${b.col}">—</div>
+    </div>
+  `).join('');
+}
+function updateRiskBars(r){
+  RISK_DEFS.forEach(b=>{
+    const v=r[b.key];if(v===undefined)return;
+    document.getElementById('rf_'+b.key).style.width=Math.max(0,Math.min(100,(v/b.max)*100))+'%';
+    document.getElementById('rn_'+b.key).textContent=v.toFixed(1);
+  });
+}
+
+// ── Gas Bars ──
+function initGasBars(){
+  const GAS=[
+    {id:'gb-co2', name:'CO₂', color:'var(--co2)', unit:'ppm'},
+    {id:'gb-ch4', name:'CH₄', color:'var(--ch4)', unit:'ppb'},
+    {id:'gb-aero',name:'AOD', color:'var(--aero)',unit:''},
+    {id:'gb-o3',  name:'O₃',  color:'var(--o3)',  unit:'DU'},
+  ];
+  document.getElementById('gasBars').innerHTML=GAS.map(g=>`
+    <div class="gas-bar-row">
+      <div class="gas-dot" style="background:${g.color};box-shadow:0 0 5px ${g.color}"></div>
+      <div class="gas-name" style="color:${g.color}">${g.name}</div>
+      <div class="gas-track"><div class="gas-bar" id="${g.id}" style="background:${g.color};width:0%"></div></div>
+      <div class="gas-val" id="${g.id}-val" style="color:${g.color}">—</div>
+    </div>
+  `).join('');
+}
+function updateGasBars(g){
+  const sets=[
+    {id:'gb-co2', v:g.effCO2, min:280, max:1200, fmt:v=>v.toFixed(0)+' ppm'},
+    {id:'gb-ch4', v:g.effCH4, min:700, max:6000, fmt:v=>v.toFixed(0)+' ppb'},
+    {id:'gb-aero',v:g.aero,   min:0,   max:2,    fmt:v=>v.toFixed(2)},
+    {id:'gb-o3',  v:g.o3,     min:100, max:500,  fmt:v=>v.toFixed(0)+' DU'},
+  ];
+  sets.forEach(s=>{
+    const pct=Math.max(0,Math.min(100,(s.v-s.min)/(s.max-s.min)*100));
+    const bar=document.getElementById(s.id);
+    const val=document.getElementById(s.id+'-val');
+    if(bar)bar.style.width=pct+'%';
+    if(val)val.textContent=s.fmt(s.v);
+  });
+}
+
+// ── Circulation Canvas ──
+function drawCirc(c){
+  const canvas=document.getElementById('circ-canvas');
+  if(!canvas)return;
+  canvas.width=canvas.offsetWidth||260; canvas.height=180;
+  const ctx=canvas.getContext('2d');
+  const W=canvas.width, H=canvas.height;
+  ctx.clearRect(0,0,W,H);
+  ctx.fillStyle='#020c1e';ctx.fillRect(0,0,W,H);
+
+  // Latitude lines
+  [0,1,2,3,4,5,6].forEach((i)=>{
+    const y=H*i/6;
+    ctx.strokeStyle='rgba(0,200,255,0.07)';ctx.lineWidth=1;ctx.setLineDash([3,5]);
+    ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(W,y);ctx.stroke();
+    ctx.setLineDash([]);
+  });
+
+  function arrow(y1,y2,dir,label,col,str){
+    const yM=(y1+y2)/2, al=0.25+str*0.6;
+    ctx.strokeStyle=col+Math.round(al*255).toString(16).padStart(2,'0');
+    ctx.lineWidth=1.5;
+    ctx.beginPath();
+    ctx.moveTo(W*0.12, dir>0?y1:y2);
+    ctx.bezierCurveTo(W*0.12,yM,W*0.88,yM,W*0.88,dir>0?y2:y1);
+    ctx.stroke();
+    const ay=dir>0?y2:y1, ax=W*0.88;
+    ctx.fillStyle=col+Math.round(al*255).toString(16).padStart(2,'0');
+    ctx.beginPath();ctx.moveTo(ax,ay);
+    ctx.lineTo(ax-7,ay+(dir>0?-7:7));ctx.lineTo(ax+7,ay+(dir>0?-7:7));
+    ctx.fill();
+    ctx.fillStyle=col+'bb';ctx.font='bold 8px Orbitron';ctx.textAlign='center';
+    ctx.fillText(label,W/2,yM+3);ctx.textAlign='left';
+  }
+
+  const hStr=Math.max(0,Math.min(1,1-c.hadleyExp/15));
+  const fStr=Math.max(0,Math.min(1,c.stability/10));
+  arrow(H*0/6,H*2/6,1,'HADLEY (NH)','#ff8040',hStr);
+  arrow(H*2/6,H*3/6,-1,'FERREL (NH)','#00c8ff',fStr);
+  arrow(H*3/6,H*4/6,1,'FERREL (SH)','#00c8ff',fStr);
+  arrow(H*4/6,H*6/6,-1,'HADLEY (SH)','#ff8040',hStr);
+
+  // ITCZ
+  const itY=H/2+c.itczShift*(H/60);
+  ctx.strokeStyle='rgba(255,60,60,0.7)';ctx.lineWidth=1.5;ctx.setLineDash([6,4]);
+  ctx.beginPath();ctx.moveTo(0,itY);ctx.lineTo(W,itY);ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle='rgba(255,80,80,0.9)';ctx.font='8px Share Tech Mono';
+  ctx.fillText(`ITCZ ${c.itczShift>0?'+':''}${c.itczShift.toFixed(1)}°`,W-90,itY-4);
+
+  // Jet stream
+  const jY=H*2/6, wobble=c.jetInst*4;
+  ctx.strokeStyle=`rgba(160,100,255,${0.3+c.jetInst/20})`;
+  ctx.lineWidth=2;
+  ctx.beginPath();ctx.moveTo(0,jY);
+  for(let x=0;x<=W;x+=8){
+    ctx.lineTo(x,jY+Math.sin(x/(38-c.jetInst*1.8))*wobble);
+  }
+  ctx.stroke();
+  ctx.fillStyle='rgba(180,120,255,0.85)';ctx.font='7px Share Tech Mono';
+  ctx.fillText(`JET  ${c.jetInst.toFixed(1)}/10`,6,jY-7);
+
+  // Circ stats
+  document.getElementById('circStats').innerHTML=`
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;">
+      ${[['Hadley',c.hadleyExp.toFixed(1)+'°'],['Trade Δ',c.tradeWind.toFixed(1)+'%'],['ITCZ',c.itczShift.toFixed(2)+'°']].map(([l,v])=>`
+        <div style="background:rgba(0,20,50,0.6);border:1px solid var(--border);padding:7px 8px;border-radius:3px;">
+          <div style="font-family:var(--font-mono);font-size:8px;color:var(--muted);margin-bottom:3px;">${l}</div>
+          <div style="font-family:var(--font-hd);font-size:12px;color:var(--glow);">${v}</div>
+        </div>`).join('')}
+    </div>`;
+}
+
+// ── Temp Chart ──
+function drawTempChart(dt){
+  const canvas=document.getElementById('tempChart');
+  if(!canvas)return;
+  canvas.width=canvas.offsetWidth||260; canvas.height=160;
+  const ctx=canvas.getContext('2d');
+  const W=canvas.width, H=canvas.height;
+  ctx.clearRect(0,0,W,H);
+  ctx.fillStyle='#020c1e';ctx.fillRect(0,0,W,H);
+
+  const vals=[
+    {l:'Tropical',v:dt.dtT,col:'#ff9944'},
+    {l:'Global',  v:dt.dtG,col:'#ff4466'},
+    {l:'Arctic',  v:dt.dtA,col:'#00c8ff'},
+  ];
+  const allV=vals.map(d=>d.v);
+  const maxA=Math.max(Math.abs(Math.min(...allV)),Math.abs(Math.max(...allV)),0.1);
+  const scale=(H*0.35)/maxA, mid=H/2;
+
+  // zero
+  ctx.strokeStyle='rgba(255,255,255,0.1)';ctx.lineWidth=1;ctx.setLineDash([3,5]);
+  ctx.beginPath();ctx.moveTo(40,mid);ctx.lineTo(W-20,mid);ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle='rgba(100,160,200,0.4)';ctx.font='8px Share Tech Mono';
+  ctx.fillText('0°C',4,mid-3);
+
+  const bw=50,gap=30,totalW=vals.length*(bw+gap)-gap;
+  const sx=(W-totalW)/2;
+  vals.forEach((d,i)=>{
+    const x=sx+i*(bw+gap);
+    const bH=d.v*scale;
+    const y=d.v>=0?mid-bH:mid;
+    const h=Math.abs(bH)||1;
+    const g=ctx.createLinearGradient(0,y,0,y+h);
+    g.addColorStop(0,d.col+'ff');g.addColorStop(1,d.col+'33');
+    ctx.fillStyle=g;ctx.fillRect(x,y,bw,h);
+    ctx.fillStyle='#fff';ctx.font='bold 11px Orbitron';ctx.textAlign='center';
+    ctx.fillText((d.v>0?'+':'')+d.v.toFixed(1),x+bw/2,d.v>=0?y-6:y+h+14);
+    ctx.fillStyle=d.col;ctx.font='8px Share Tech Mono';
+    ctx.fillText(d.l,x+bw/2,H-5);
+    ctx.textAlign='left';
+  });
+}
+
+// ── Tab switching ──
+function showTab(id){
+  ['risk','circ','temp'].forEach(t=>{
+    document.getElementById('tab-'+t).classList.toggle('on',t===id);
+  });
+  document.querySelectorAll('.tab-btn').forEach((b,i)=>{
+    b.classList.toggle('on',['risk','circ','temp'][i]===id);
+  });
+}
+
+// ╔═══════════════════════════════════════════════════════════╗
+// ║  INIT                                                     ║
+// ╚═══════════════════════════════════════════════════════════╝
+window.addEventListener('load',()=>{
+  resizeEarth();
+  window.addEventListener('resize',resizeEarth);
+  drawEarth();
+  initMetrics();
+  initRiskBars();
+  initGasBars();
+  runSim();
+});
+</script>
+</body>
+</html>
